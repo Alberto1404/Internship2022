@@ -5,10 +5,18 @@ import random
 import torch
 import skimage.transform as skTrans
 import nibabel as nib
-from tqdm import tqdm
 
-from veela import process_dataset
-from monai.inferers import sliding_window_inference
+from medpy.metric.binary import dc as DiceMetric
+from tqdm import tqdm
+from pathlib import Path
+from monai.config import PathLike
+from typing import Dict, List
+from monai.data import decollate_batch
+from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
+from typing import overload
+
+post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def create_dir(path):
@@ -38,7 +46,6 @@ def kfcv(dataset, k):
 		print('\nTraining indexed obtained, obtaining validation... ')
 		validation = sorted(random.sample(dataset,5))
 		while any(item in training for item in validation):
-			# any(item in a for item in b)
 			validation = sorted(random.sample(dataset,5))
 		print('\nValidation indexes obtained!!!')
 		test = sorted(list(set(dataset) - set(training) - set(validation)))
@@ -48,6 +55,21 @@ def kfcv(dataset, k):
 		folds_test[:,fold] = test
 
 	return folds_training.astype(int), folds_validation.astype(int), folds_test.astype(int)
+
+def open_json_file(directory):
+	with open(directory) as json_file:
+		dictionary = json.load(json_file)
+	return dictionary
+
+def save_dataset_dict(info_dict, dataset_name, save_dir):
+
+	# save_dir = 'home2/alberto/data' # '...'
+	# Serializing json 
+	json_object = json.dumps(info_dict, indent = 4)
+
+	# Writing to sample.json
+	with open(os.path.join(save_dir, dataset_name) + '.json', 'w') as outfile:
+		outfile.write(json_object)
 
 
 def create_json_file(dst_folder, info_dict, k): # Add segmentation flag for future
@@ -75,13 +97,34 @@ def create_json_file(dst_folder, info_dict, k): # Add segmentation flag for futu
 			"reference": "Vanderbilt University",
 			"tensorImageSize": "3D",
 			"test": [
-				os.path.join(dst_folder,str(folds_test[0,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[1,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[2,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[3,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[4,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[5,fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
-				os.path.join(dst_folder,str(folds_test[6,fold]).zfill(3) + '-VE-liver' + '.nii.gz')
+			{
+				"image": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[0,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[1,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[2,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[3,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[4,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[5,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
+			{
+				"image": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
+				"label": os.path.join(dst_folder,str(folds_test[6,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
+			},
 			],
 			"training": [
 			{
@@ -198,7 +241,7 @@ def create_json_file(dst_folder, info_dict, k): # Add segmentation flag for futu
 				"image": os.path.join(dst_folder,str(folds_validation[4, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 				"label": os.path.join(dst_folder,str(folds_validation[4,fold]).zfill(3) + '-VE-liver_por_GT' + '.nii.gz')
 			},
-		]
+			]
 		}
 		# Serializing json 
 		json_object = json.dumps(dictionary, indent = 4)
@@ -218,45 +261,54 @@ def get_position(my_dict, key_dict, myvalue):
 			return idx
 
 
-def save_segmentations(model,weights_dir, json_dict, info_dict, size, val_ds):
+def save_segmentations(model,weights_dir, json_dict, info_dict, size, test_loader):
+	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
+	create_dir(output_route)
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
-	# model.load_state_dict(torch.load('./best_metric_model.pth')) # PRETRAINED NETWORK
 	model.eval()
-	for case_num in range(len(json_dict['validation'])): # len(dictionary['validation']) defined in JSON !!!
-		with torch.no_grad():
-			img_name = os.path.split(val_ds[case_num]["image_meta_dict"]["filename_or_obj"])[1]
-			img = val_ds[case_num]["image"]
-			label = val_ds[case_num]["label"]
-			val_inputs = torch.unsqueeze(img, 1).cuda()
-			val_labels = torch.unsqueeze(label, 1).cuda()
-			val_outputs = sliding_window_inference(
-			val_inputs, size, 4, model, overlap=0.8
-			)
-			# result = torch.argmax(val_outputs, dim=1).detach().cpu()[0, :, :, :].permute(2,0,1).numpy()
-			result = torch.argmax(val_outputs, dim=1).detach().cpu()[0, :, :, :].numpy()
+	with torch.no_grad():
+		for idx, test_data in enumerate(test_loader):
+			val_images, val_labels = test_data["image"].to(device), test_data["label"].to(device)
+			pred = model(val_images)
+			pred = post_trans(decollate_batch(pred))
 
+			result = pred[0].squeeze().cpu().numpy().astype(np.uint8)
 
-			pos = get_position(info_dict, 'Image name', img_name)
-
+			pos = get_position(info_dict, 'Image name', json_dict['test'][idx]['image'].split('/')[-1])
 			unresized_result = skTrans.resize(result, (
-			info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
-			info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
-			info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
-			), order = 1, preserve_range=True)
+				info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
+				info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
+				info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
+			), preserve_range=True).astype(np.uint8)
 
-			result = np.zeros(info_dict['Volume shape'][pos])
+			result = np.zeros(info_dict['Volume shape'][pos]).astype(np.uint8)
 			result[
-			info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
-			info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
-			info_dict['Liver coordinates'][pos][4]:info_dict['Liver coordinates'][pos][5] + 1 
+				info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
+				info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
+				info_dict['Liver coordinates'][pos][4]:info_dict['Liver coordinates'][pos][5] + 1 
 			] = unresized_result
 			output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-			# output_route = './results'
-			output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
-			create_dir(output_route)
+
+			groundtruth = info_dict['Portal nifti object'][pos].get_fdata()
+			# Compute dice metric
+			dice = 100.*DiceMetric(result.astype(np.bool), groundtruth.astype(np.bool))
+			print('Dice metric: {} %'.format(dice))
+
 			nib.save(output_ima, output_route + '/' + info_dict['Image name'][pos] + '_segmented.nii.gz')
 
-		
+
+def load_veela_datalist(data_list_file_path: PathLike, data_list_key: str = "training") -> List[Dict]:
+
+    data_list_file_path = Path(data_list_file_path)
+    if not data_list_file_path.is_file():
+        raise ValueError(f"Data list file {data_list_file_path} does not exist.")
+    with open(data_list_file_path) as json_file:
+        json_data = json.load(json_file)
+    if data_list_key not in json_data:
+        raise ValueError(f'Data list {data_list_key} not specified in "{data_list_file_path}".')
+    expected_data = json_data[data_list_key]
+    return expected_data
+
 
 
 

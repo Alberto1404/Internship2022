@@ -6,6 +6,8 @@ import random
 
 from monai.inferers import sliding_window_inference
 
+current_path = os.path.abspath(os.getcwd())
+
 
 def plot_slices(model,val_ds, size, weights_dir, dictionary):
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
@@ -34,7 +36,7 @@ def plot_slices(model,val_ds, size, weights_dir, dictionary):
 		plt.imshow(torch.argmax(val_outputs, dim=1).detach().cpu()[0, :, :, dictionary[img_name]])
 		plt.show()
 
-def plot_loss_metric(eval_num,epoch_loss_values, metric_values):
+def save_loss_metric(eval_num,epoch_loss_values, metric_values):
 	plt.figure("train", (12, 6))
 	plt.subplot(1, 2, 1)
 	plt.title("Iteration Average Loss")
@@ -48,4 +50,5 @@ def plot_loss_metric(eval_num,epoch_loss_values, metric_values):
 	y = metric_values
 	plt.xlabel("Iteration")
 	plt.plot(x, y)
+	plt.savefig(current_path + 'metric.png')
 	plt.show()

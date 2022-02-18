@@ -18,7 +18,9 @@ from monai.transforms import (
     ToTensord,
 )
 import os
+from utils import load_veela_datalist
 
+import json
 def transformations(size):
 	train_transforms = Compose(
 		[
@@ -96,16 +98,37 @@ def transformations(size):
 			ToTensord(keys=["image", "label"]),
 		]
 	)
-	return train_transforms, val_transforms
+
+	test_transforms = Compose(
+		[
+			LoadImaged(keys=["image", "label"]),
+			AddChanneld(keys=["image", "label"]),
+			Spacingd(
+				keys=["image", "label"],
+				pixdim=(1.0, 1.0, 1.0),
+				mode=("bilinear", "nearest"),
+			),
+			Orientationd(keys=["image", "label"], axcodes="RAS"),
+			# ScaleIntensityRanged(
+			#     keys=["image"], a_min=-175, a_max=250, b_min=0.0, b_max=1.0, clip=True
+			# ),
+			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+			CropForegroundd(keys=["image", "label"], source_key="image"),
+			ToTensord(keys=["image", "label"]),
+		]
+	)
+	return train_transforms, val_transforms, test_transforms
 
 
 def get_train_valid_loader(size, json_routes):
 
 	datasets = json_routes[0] # BAD!!!!!!!! K-FOLD CROSS VALIDATION !!!!!
-	datalist = load_decathlon_datalist(datasets, True, "training")
-	val_files = load_decathlon_datalist(datasets, True, "validation")
 
-	train_transforms, val_transforms = transformations(size)
+	datalist = load_veela_datalist(datasets, "training")
+	val_files = load_veela_datalist(datasets, "validation")
+	test_files = load_veela_datalist(datasets, "test")
+	
+	train_transforms, val_transforms, test_transforms  = transformations(size)
 
 	train_ds = CacheDataset(
 		data=datalist,
@@ -123,5 +146,11 @@ def get_train_valid_loader(size, json_routes):
 	val_loader = DataLoader(
 		val_ds, batch_size=1, shuffle=False, num_workers=4, pin_memory=True
 	)
-	return train_loader, val_loader, val_ds
+	test_ds = CacheDataset(
+		data = test_files, transform=test_transforms, cache_num = 7, cache_rate =1,	num_workers=4
+	)
+	test_loader = DataLoader(
+		test_ds, batch_size=1, shuffle = False, num_workers=2, pin_memory=True
+	)
+	return train_loader, val_loader, test_loader, val_ds
 

@@ -2,6 +2,7 @@ import torch
 import argparse
 import os
 import numpy as np
+import glob
 
 import dataset_loader
 import utils
@@ -11,34 +12,39 @@ import plots
 from tqdm import tqdm
 from monai.metrics import DiceMetric
 from monai.losses import DiceCELoss
-from monai.networks.nets import UNETR
+from monai.networks.nets import UNETR, UNet
 from monai.inferers import sliding_window_inference
 from monai.data import (
-	DataLoader,
-	CacheDataset,
-	load_decathlon_datalist,
 	decollate_batch,
 )
-from monai.transforms import AsDiscrete
+from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 
 
+# Global variables
+post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+current_path = os.path.abspath(os.getcwd())
+eval_num = 500
 
+
+# Functions
 def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size):
 	model.eval()
 	dice_vals = list()
 	with torch.no_grad():
 		for step, batch in enumerate(epoch_iterator_val):
-			val_inputs, val_labels = (batch["image"].cuda(), batch["label"].cuda())
+			val_inputs, val_labels = (batch["image"].to(device), batch["label"].to(device))
 			val_outputs = sliding_window_inference(val_inputs, size, 4, model)
-			val_labels_list = decollate_batch(val_labels)
-			val_labels_convert = [
-				post_label(val_label_tensor) for val_label_tensor in val_labels_list
-			]
-			val_outputs_list = decollate_batch(val_outputs)
-			val_output_convert = [
-				post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
-			]
-			dice_metric(y_pred=val_output_convert, y=val_labels_convert)
+			val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
+			# val_labels_list = decollate_batch(val_labels)
+			# val_labels_convert = [
+			# 	post_label(val_label_tensor) for val_label_tensor in val_labels_list
+			# ]
+			# val_outputs_list = decollate_batch(val_outputs)
+			# val_output_convert = [
+			# 	post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
+			# ]
+			dice_metric(y_pred=val_outputs, y=val_labels)
 			dice = dice_metric.aggregate().item()
 			dice_vals.append(dice)
 			epoch_iterator_val.set_description(
@@ -49,8 +55,10 @@ def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, 
 	return mean_dice_val
 
 
-def train(model, size,global_step, train_loader, val_loader,dice_val_best, global_step_best, optimizer, dice_metric, loss_function, eval_num, post_label, post_pred, max_iterations):
+def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_function, post_label, post_pred, global_step, max_iterations):
 	model.train()
+	dice_val_best = 0.0
+	global_step_best = 0
 	epoch_loss = 0
 	step = 0
 	epoch_loss_values = list()
@@ -61,17 +69,18 @@ def train(model, size,global_step, train_loader, val_loader,dice_val_best, globa
 	)
 	for step, batch in enumerate(epoch_iterator):
 		step += 1
-		x, y = (batch["image"].cuda(), batch["label"].cuda())
+		x, y = (batch["image"].to(device), batch["label"].to(device))
+		optimizer.zero_grad()
 		logit_map = model(x)
 		loss = loss_function(logit_map, y)
 		loss.backward()
 		epoch_loss += loss.item()
 		optimizer.step()
-		optimizer.zero_grad()
+		
 		epoch_iterator.set_description(
 			"Training (%d / %d Steps) (loss=%2.5f)" % (global_step, max_iterations, loss)
 		)
-		if (global_step % eval_num == 0 and global_step != 0) or global_step == max_iterations:
+		if (global_step % eval_num == 0 and global_step != 0) or global_step == max_iterations: # FOR SAVING
 
 			epoch_iterator_val = tqdm(val_loader, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True)
 			dice_val = validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size)
@@ -84,7 +93,7 @@ def train(model, size,global_step, train_loader, val_loader,dice_val_best, globa
 				utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights'))
 				torch.save(
 					# model.state_dict(), os.path.join(os.path.join(os.path.abspath(os.getcwd()), 'weights'), "best_metric_model.pth")
-					model.load_state_dict(torch.load(os.path.join(os.path.abspath(os.getcwd()), 'weights', "best_metric_model.pth")))
+					model.state_dict(), os.path.join(current_path,'weights',"best_metric_model.pth")
 				)
 				print(
 					"Model Was Saved ! Current Best Avg. Dice: {} Current Avg. Dice: {}".format(
@@ -108,10 +117,21 @@ def main(args):
 
 	print('Processing dataset...\n')
 	# DOWNLOAD DATASET AND FORMAT IN THE FOLDER
+
+	"""try: # Find DATASET_NAME.json in data directory, and directly load it if previously read from previous trainings
+		print('Finding ' + args.dataset + ' dictionary..')
+		glob.glob(current_path + '/' + args.dataset + '.json')[0]
+		print('Found ' + args.dataset + '.json at ' + current_path +'. Loading...')
+		info_dict = utils.open_json_file(current_path + '/' + args.dataset + '.json')
+	except IndexError:
+		print('No dataset found. Proceed reading ' + args.dataset + ' ...')
+		info_dict = veela.process_dataset(args.dataset_path)
+		utils.save_dataset_dict(info_dict, args.dataset, current_path)"""
+	
 	info_dict = veela.process_dataset(args.dataset_path)
-	# dst_folder = './data_reshaped' # Folder to save resized images
-	dst_folder = os.path.join(os.path.abspath(os.getcwd()), 'data_reshaped')
+	dst_folder = os.path.join(current_path, 'data_reshaped') # Folder to save resized images that feed the network
 	utils.create_dir(dst_folder)
+	
 	print('Splitting dataset...\n')
 	veela.split_dataset(info_dict, args.dataset_path, args.input_size, dst_folder)
 
@@ -119,26 +139,20 @@ def main(args):
 	print('Creating JSON file...\n')
 	json_routes, dictionary_list = utils.create_json_file(dst_folder, info_dict, args.k)
 	print('Creating train and valid loaders...\n')
-	train_loader, val_loader, val_ds = dataset_loader.get_train_valid_loader(args.input_size, json_routes)
+	train_loader, val_loader, test_loader, val_ds = dataset_loader.get_train_valid_loader(args.input_size, json_routes)
 
 
 	# CREATE MODEL, LOSS, OPTIMIZER
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	print('Creating model...\n')
 	if args.binary == True:
-		model = UNETR(
+		model = UNet(
+			spatial_dims=3,
 			in_channels=1,
-			out_channels=2,
-			img_size = args.input_size,
-			feature_size=args.feature_size,
-			hidden_size=args.hidden_size, # 1920  768
-			mlp_dim = args.mlp_dim, # 7680   3072
-			num_heads = args.num_heads,
-			pos_embed = args.pos_embed,
-			norm_name = args.norm_name,
-			res_block = args.res_block,
-			dropout_rate = args.dropout_rate
+			out_channels= 1,
+			channels=(16, 32, 64, 128, 256),
+			strides=(2, 2, 2, 2),
+			num_res_units=2,
 		).to(device)
 	else:
 		model = UNETR(
@@ -155,47 +169,40 @@ def main(args):
 			dropout_rate = args.dropout_rate
 		).to(device)
 
-	loss_function = DiceCELoss(softmax=True, to_onehot_y=True)
+	loss_function = DiceCELoss(sigmoid=True, to_onehot_y=False)
 	torch.backends.cudnn.benchmark = True
 	optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 
 	# EXECUTE A TYPICAL PYTORCH TRAINING PROCESS
 	# max_iterations = 50000
 	max_iterations = args.max_it
-	eval_num = 500
 	post_label = AsDiscrete(to_onehot = 2)
 	post_pred = AsDiscrete(argmax=True, to_onehot = 2)
 	dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 	global_step = 0
-	dice_val_best = 0.0
-	global_step_best = 0
+
 	while global_step < max_iterations:
 		global_step, dice_val_best, global_step_best, epoch_loss_values, metric_values = train(
 			model, 
 			args.input_size,
-			global_step, 
 			train_loader, 
 			val_loader,
-			dice_val_best, 
-			global_step_best,
 			optimizer,
 			dice_metric,
 			loss_function,
-			eval_num, 
 			post_label,
 			post_pred,
+			global_step,
 			args.max_it)
-	# model.load_state_dict(torch.load(os.path.join(os.path.join(os.path.abspath(os.getcwd()), 'weights'), "best_metric_model.pth")))
-	model.load_state_dict(torch.load(os.path.join(os.path.abspath(os.getcwd()), 'weights', "best_metric_model.pth")))
 
 	print(f"Train completed, best_metric: {dice_val_best:.4f} "f"at iteration: {global_step_best}")
 
 	# CHECK BEST MODEL OUTPUT WITH THE INPUT IMAGE AND LABEL
-	plots.plot_slices(model,val_ds, args.input_size, os.path.join(os.path.abspath(os.getcwd()), 'weights'), dictionary_list[0]) # BAD!!!!!!!! K-FOLD CROSS VALIDATION !!!!!
-	plots.plot_loss_metric(eval_num,epoch_loss_values, metric_values)
+	# plots.plot_slices(model,val_ds, args.input_size, os.path.join(current_path, 'weights'), dictionary_list[0]) # BAD!!!!!!!! K-FOLD CROSS VALIDATION !!!!!
+	plots.save_loss_metric(eval_num,epoch_loss_values, metric_values)
 
 	# SAVE SEGMENTATIONS
-	utils.save_segmentations(model,os.path.join(os.path.abspath(os.getcwd()), 'weights'), dictionary_list[0], info_dict, args.input_size, val_ds)
+	utils.save_segmentations(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.input_size, test_loader)
 
 
 
@@ -203,10 +210,11 @@ if __name__ == '__main__':
 	
 	parser = argparse.ArgumentParser(description='VEELA dataset segmentation with transformers')
 
-	parser.add_argument('-binary', required=False, type=str, default='yes', choices=('yes','no'))
-	parser.add_argument('-dataset_path', required = False, type=str, default='/home/guijosa/Documents/PythonDocs/UNETR/VEELA/dataset')
+	parser.add_argument('-dataset', required=False, type=str, default = 'VEELA') # Future: add choices
+	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
+	parser.add_argument('-dataset_path', required = False, type=str, default='home2/alberto/data/VEELA/dataset')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
-	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=25000)
+	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=1000)
 	parser.add_argument('-lr', required=False, type = float, help='Define learning rate', default=1e-4)
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 1)
@@ -216,19 +224,19 @@ if __name__ == '__main__':
 	parser.add_argument('-hidden_size', required=False, type=int, default = 768)
 	parser.add_argument('-mlp_dim', required=False, type=int, default = 3072)
 	parser.add_argument('-num_heads', required=False, type=int, default = 16)
-	parser.add_argument('-pos_embed', required=False, type=str, default = 'perceptron',choices=('perceptron','conv'))
-	parser.add_argument('-norm_name', required=False, type=str, default = 'instance',choices=('batch','instance'))
-	parser.add_argument('-res_block', required=False, type=str, choices=('yes','no'), default='yes')
+	parser.add_argument('-pos_embed', required=False, type=str, default = 'perceptron', choices=('perceptron','conv'))
+	parser.add_argument('-norm_name', required=False, type=str, default = 'instance', choices=('batch','instance'))
+	parser.add_argument('-res_block', required=False, type=str, choices=('True','False'), default='True')
 	parser.add_argument('-dropout_rate', required=False, type=float, default = 0.0)
 	
 	args = parser.parse_args()
 
-	if args.binary == 'yes':
+	if args.binary == 'True':
 		args.binary = True
 	else:
 		args.binary = False
 
-	if args.res_block == 'yes':
+	if args.res_block == 'True':
 		args.res_block = True
 	else:
 		args.res_block = False
