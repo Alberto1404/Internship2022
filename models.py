@@ -6,7 +6,7 @@ def get_model(model, binary_flag, img_size, feature_size, hidden_size, mlp_dim, 
 		if binary_flag == True:
 			out_channels = 1
 		else:
-			out_channels = 3
+			out_channels = 2
 		
 		model = UNet(
 			spatial_dims=3,
@@ -20,7 +20,7 @@ def get_model(model, binary_flag, img_size, feature_size, hidden_size, mlp_dim, 
 		if binary_flag == True:
 			out_channels = 1
 		else:
-			out_channels = 3
+			out_channels = 2
 		model = UNETR(
 			in_channels=1,
 			out_channels=out_channels,
