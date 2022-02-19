@@ -1,31 +1,32 @@
+# Library imports
 import torch
 import argparse
 import os
 import numpy as np
 import glob
 
+# Dependent file imports
 import dataset_loader
 import utils
 import veela
 import plots
+import models
 
+# Module imports
 from tqdm import tqdm
 from monai.metrics import DiceMetric
 from monai.losses import DiceCELoss
-from monai.networks.nets import UNETR, UNet
 from monai.inferers import sliding_window_inference
 from monai.data import (
 	decollate_batch,
 )
 from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 
-
 # Global variables
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 current_path = os.path.abspath(os.getcwd())
 eval_num = 500
-
 
 # Functions
 def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size):
@@ -145,30 +146,8 @@ def main(args):
 	# CREATE MODEL, LOSS, OPTIMIZER
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 	print('Creating model...\n')
-	if args.binary == True:
-		model = UNet(
-			spatial_dims=3,
-			in_channels=1,
-			out_channels= 1,
-			channels=(16, 32, 64, 128, 256),
-			strides=(2, 2, 2, 2),
-			num_res_units=2,
-		).to(device)
-	else:
-		model = UNETR(
-			in_channels=1,
-			out_channels=3,
-			img_size = args.input_size,
-			feature_size=args.feature_size,
-			hidden_size=args.hidden_size, # 1920  768
-			mlp_dim = args.mlp_dim, # 7680   3072
-			num_heads = args.num_heads,
-			pos_embed = args.pos_embed,
-			norm_name = args.norm_name,
-			res_block = args.res_block,
-			dropout_rate = args.dropout_rate
-		).to(device)
-
+	model = models.get_model(args.net, args.binary, args.input_size, args.feature_size, args.hidden_size, args.mlp_dim, args.num_heads, args.pos_embed, args.norm_name, args.res_block, args.dropout_rate)
+	
 	loss_function = DiceCELoss(sigmoid=True, to_onehot_y=False)
 	torch.backends.cudnn.benchmark = True
 	optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
@@ -218,6 +197,9 @@ if __name__ == '__main__':
 	parser.add_argument('-lr', required=False, type = float, help='Define learning rate', default=1e-4)
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 1)
+
+	parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
+
 	# UNETR
 	parser.add_argument('--input_size', required=False, nargs='+', type = int, default=[128,128,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
 	parser.add_argument('-feature_size', required=False, type=int, default=16)
