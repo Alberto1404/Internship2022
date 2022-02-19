@@ -27,32 +27,43 @@ def append_value_to_dict(dict_obj, key, value):
 		dict_obj[key] = value
 
 
-def process_dataset(dataset_path):
+def get_names_from_dataset(dataset_path, dataset_name, save_dir):
 
-	info_dict = dict()
+	dict_names = dict()
+
+	for name in tqdm(sorted(os.listdir(dataset_path))):
+		if '-VE.nii.gz' in name: # INPUT VOLUME
+			append_value_to_dict(dict_names, 'Image name', name)
+		elif '-VE-por.nii.gz' in name: # PORTAL VEINS
+			append_value_to_dict(dict_names, 'Portal veins name', name)
+		elif '-VE-hep.nii.gz' in name: # HEPATIC VEINS
+			append_value_to_dict(dict_names, 'Hepatic veins name', name)
+
+
+	return dict_names
+		
+
+def process_dataset(dict_names, dataset_path):
 
 	for name in tqdm(sorted(os.listdir(dataset_path))):
 		if '-VE-liv.nii.gz' in name: # LIVER MASKS
-			liver_nifti = nib.load(dataset_path + '/'+name)
+			liver_nifti = nib.load(dataset_path + '/' + name)
 			liver_coords = get_liver_bounding_box(liver_nifti.get_fdata())
-			append_value_to_dict(info_dict, 'Liver coordinates', liver_coords)
-			append_value_to_dict(info_dict, 'Affine matrix', liver_nifti.affine)
+			append_value_to_dict(dict_names, 'Liver coordinates', liver_coords)
+			append_value_to_dict(dict_names, 'Affine matrix', liver_nifti.affine)
 		
 		elif '-VE.nii.gz' in name: # INPUT VOLUME
-			append_value_to_dict(info_dict, 'Image name', name)
-			append_value_to_dict(info_dict, 'Volume shape', nib.load(dataset_path + '/'+ name).shape)
-			append_value_to_dict(info_dict, 'Header', nib.load(dataset_path + '/'+ name).header)
-			append_value_to_dict(info_dict, 'Image nifti object', nib.load(dataset_path + '/'+ name))
+			append_value_to_dict(dict_names, 'Volume shape', nib.load(dataset_path + '/'+ name).shape)
+			append_value_to_dict(dict_names, 'Header', nib.load(dataset_path + '/'+ name).header)
+			append_value_to_dict(dict_names, 'Image nifti object', nib.load(dataset_path + '/'+ name))
 		
 		elif '-VE-por.nii.gz' in name: # PORTAL VEINS
-			append_value_to_dict(info_dict, 'Portal veins name', name)
-			append_value_to_dict(info_dict, 'Portal nifti object', nib.load(dataset_path + '/'+ name))
+			append_value_to_dict(dict_names, 'Portal nifti object', nib.load(dataset_path + '/'+ name))
+
 		elif '-VE-hep.nii.gz' in name: # HEPATIC VEINS
-			append_value_to_dict(info_dict, 'Hepatic veins name', name)
-			append_value_to_dict(info_dict, 'Hepatic nifti object', nib.load(dataset_path + '/'+ name))
+			append_value_to_dict(dict_names, 'Hepatic nifti object', nib.load(dataset_path + '/'+ name))
 
-	return info_dict
-
+	return dict_names
 def split_dataset(info_dict, dataset_path, size, dst_folder):
 
 	# PIPELINE
