@@ -116,20 +116,20 @@ def main(args):
 	# SETUP TRANSFORMS FOR TRAINING AND VALIDATION
 	# Transformations called in dataset loader. 
 
-	print('Processing dataset...\n')
+		print('Processing dataset...\n')
 	# DOWNLOAD DATASET AND FORMAT IN THE FOLDER
 
-	"""try: # Find DATASET_NAME.json in data directory, and directly load it if previously read from previous trainings
+	try: # Find DATASET_NAME.json in data directory, and directly load it if previously read from previous trainings
 		print('Finding ' + args.dataset + ' dictionary..')
 		glob.glob(current_path + '/' + args.dataset + '.json')[0]
 		print('Found ' + args.dataset + '.json at ' + current_path +'. Loading...')
-		info_dict = utils.open_json_file(current_path + '/' + args.dataset + '.json')
+		dict_names = utils.open_json_file(current_path + '/' + args.dataset + '.json')
 	except IndexError:
-		print('No dataset found. Proceed reading ' + args.dataset + ' ...')
-		info_dict = veela.process_dataset(args.dataset_path)
-		utils.save_dataset_dict(info_dict, args.dataset, current_path)"""
+		print('No ' + args.dataset + '.JSON found. Proceed reading ' + args.dataset + ' from ' + args.dataset_path + '...')
+		dict_names = veela.get_names_from_dataset(args.dataset_path, args.dataset, current_path)
+		utils.save_dataset_dict(dict_names, args.dataset, current_path)
 	
-	info_dict = veela.process_dataset(args.dataset_path)
+	info_dict = veela.process_dataset(dict_names, args.dataset_path)
 	dst_folder = os.path.join(current_path, 'data_reshaped') # Folder to save resized images that feed the network
 	utils.create_dir(dst_folder)
 	
