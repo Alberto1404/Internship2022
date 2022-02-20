@@ -2,6 +2,7 @@ import nibabel as nib
 import numpy as np
 import os
 import skimage.transform as skTrans
+
 from tqdm import tqdm
 
 
@@ -25,7 +26,6 @@ def append_value_to_dict(dict_obj, key, value):
 		# As key is not in dict,
 		# so, add key-value pair
 		dict_obj[key] = value
-
 
 def get_names_from_dataset(dataset_path, dataset_name, save_dir):
 
@@ -64,9 +64,60 @@ def process_dataset(dict_names, dataset_path):
 			append_value_to_dict(dict_names, 'Hepatic nifti object', nib.load(dataset_path + '/'+ name))
 
 	return dict_names
-def split_dataset(info_dict, dataset_path, size, dst_folder):
 
-	# PIPELINE
+
+def split_dataset(info_dict, size, dst_folder, is_binary):
+
+	# PIPELINE (INPUT)
+	for idx in tqdm(range(len(info_dict['Image name']))):
+		# NIFTI 2 NUMPY ND ARRAY
+		ima = info_dict['Image nifti object'][idx].get_fdata()
+		ima_portal = info_dict['Portal nifti object'][idx].get_fdata()
+		# 3D INDEXING
+		liver = ima[
+			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
+			info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
+			info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
+		]
+		liver_portal = ima_portal[
+			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
+			info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
+			info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
+		]
+		# RESIZE
+		resized_liver = skTrans.resize(liver, size, order = 1, preserve_range=True, anti_aliasing = True)
+		resized_liver_portal = skTrans.resize(liver_portal.astype(np.uint8), size, order = 0, preserve_range=True, anti_aliasing = True).astype(np.uint8)
+
+		resized_liver_portal[np.where(resized_liver_portal > 0.95)] = 1
+		resized_liver_portal[np.where(resized_liver_portal != 1)] = 0
+
+		# SAVE RESIZED IMAGE
+		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+		nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
+
+		if not is_binary:
+			ima_hepatic = info_dict['Hepatic nifti object'][idx].get_fdata().astype(np.uint8)
+			liver_hepatic = ima_hepatic[
+					info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
+					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
+					info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
+				]
+			resized_liver_hepatic = skTrans.resize(liver_hepatic.astype(np.uint8), size, order = 0, preserve_range=True, anti_aliasing = True).astype(np.uint8)
+			resized_liver_hepatic[np.where(resized_liver_hepatic > 0.95)] = 1
+			resized_liver_hepatic[np.where(resized_liver_hepatic != 1)] = 0
+
+			resized_multilabel = np.zeros((2,size[0],size[1],size[2]), dtype=np.uint8)
+
+			resized_multilabel[0,:,:,:] = resized_liver_portal
+			resized_multilabel[1,:,:,:] = resized_liver_hepatic
+
+			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')
+		
+		output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+		nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')
+
+	"""# PIPELINE
 	for idx in tqdm(range(len(info_dict['Image name']))):
 		name = info_dict['Image name'][idx]
 		name_gt = info_dict['Portal veins name'][idx]
@@ -94,42 +145,7 @@ def split_dataset(info_dict, dataset_path, size, dst_folder):
 		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 		output_ima_gt = nib.Nifti1Image(resized_liver_gt, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 		nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
-		nib.save(output_ima_gt, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')
+		nib.save(output_ima_gt, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')"""
 
-	"""for idx, name in enumerate(info_dict['Image name']):
-		ima = nib.load(os.path.join(dataset_path, name)).get_fdata()
-		# 3D indexing volume_images
-		liver = ima[
-			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
-			info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
-			info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
-		]
-		# resized_liver = skTrans.resize(liver, (average_size[0], average_size[1], average_size[2]), order = 1, preserve_range=True)
-		resized_liver = skTrans.resize(liver, size, order = 1, preserve_range=True)
-		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-		if len(os.listdir('./data/imagesTr')) < 28:
-			nib.save(output_ima, './data/imagesTr/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
-		else:
-			nib.save(output_ima, './data/imagesTs/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
-
-	for idx, name in enumerate(info_dict['Portal veins name']):
-		ima = nib.load(os.path.join(dataset_path, name)).get_fdata().astype(np.uint8)
-		# 3D indexing
-		liver = ima[
-			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
-			info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
-			info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
-		]
-		# resized_liver = skTrans.resize(liver, (average_size[0], average_size[1], average_size[2]), order = 1, preserve_range=True)
-		resized_liver = skTrans.resize(liver, size, preserve_range=True)
-
-		resized_liver[np.where(resized_liver > 0.95)] = 1
-		resized_liver[np.where(resized_liver != 1)] = 0
-
-		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-		if len(os.listdir('./data/labelsTr')) < 28:
-			nib.save(output_ima, './data/labelsTr/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')
-		else:
-			nib.save(output_ima, './data/labelsTs/'+ info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')"""
 
 
