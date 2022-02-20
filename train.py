@@ -205,7 +205,7 @@ if __name__ == '__main__':
 	parser.add_argument('-feature_size', required=False, type=int, default=16)
 	parser.add_argument('-hidden_size', required=False, type=int, default = 768)
 	parser.add_argument('-mlp_dim', required=False, type=int, default = 3072)
-	parser.add_argument('-num_heads', required=False, type=int, default = 16)
+	parser.add_argument('-num_heads', required=False, type=int, default = 12)
 	parser.add_argument('-pos_embed', required=False, type=str, default = 'perceptron', choices=('perceptron','conv'))
 	parser.add_argument('-norm_name', required=False, type=str, default = 'instance', choices=('batch','instance'))
 	parser.add_argument('-res_block', required=False, type=str, choices=('True','False'), default='True')
