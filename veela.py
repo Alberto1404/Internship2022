@@ -72,7 +72,7 @@ def split_dataset(info_dict, size, dst_folder, is_binary):
 	for idx in tqdm(range(len(info_dict['Image name']))):
 		# NIFTI 2 NUMPY ND ARRAY
 		ima = info_dict['Image nifti object'][idx].get_fdata()
-		ima_portal = info_dict['Portal nifti object'][idx].get_fdata()
+		ima_portal = info_dict['Portal nifti object'][idx].get_fdata().astype(np.uint8)
 		# 3D INDEXING
 		liver = ima[
 			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
@@ -86,7 +86,7 @@ def split_dataset(info_dict, size, dst_folder, is_binary):
 		]
 		# RESIZE
 		resized_liver = skTrans.resize(liver, size, order = 1, preserve_range=True, anti_aliasing = True)
-		resized_liver_portal = skTrans.resize(liver_portal.astype(np.uint8), size, order = 0, preserve_range=True, anti_aliasing = True).astype(np.uint8)
+		resized_liver_portal = skTrans.resize(liver_portal, size, order = 0, preserve_range=True, anti_aliasing = True)
 
 		resized_liver_portal[np.where(resized_liver_portal > 0.95)] = 1
 		resized_liver_portal[np.where(resized_liver_portal != 1)] = 0
@@ -102,11 +102,11 @@ def split_dataset(info_dict, size, dst_folder, is_binary):
 					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
 					info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
 				]
-			resized_liver_hepatic = skTrans.resize(liver_hepatic.astype(np.uint8), size, order = 0, preserve_range=True, anti_aliasing = True).astype(np.uint8)
+			resized_liver_hepatic = skTrans.resize(liver_hepatic, size, order = 0, preserve_range=True, anti_aliasing = True)
 			resized_liver_hepatic[np.where(resized_liver_hepatic > 0.95)] = 1
 			resized_liver_hepatic[np.where(resized_liver_hepatic != 1)] = 0
 
-			resized_multilabel = np.zeros((2,size[0],size[1],size[2]), dtype=np.uint8)
+			resized_multilabel = np.zeros((2,size[0],size[1],size[2]))
 
 			resized_multilabel[0,:,:,:] = resized_liver_portal
 			resized_multilabel[1,:,:,:] = resized_liver_hepatic
