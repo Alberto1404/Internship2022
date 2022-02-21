@@ -4,8 +4,6 @@ import os
 import numpy as np
 import glob
 
-from zmq import device
-
 # Dependent file imports
 import dataset_loader
 import utils
@@ -27,7 +25,7 @@ from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 current_path = os.path.abspath(os.getcwd())
-eval_num = 500
+eval_num = 20
 
 def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size):
 	model.eval()
@@ -55,15 +53,13 @@ def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, 
 	mean_dice_val = np.mean(dice_vals)
 	return mean_dice_val
 
-def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_function, post_label, post_pred, global_step, max_iterations):
+def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_function, post_label, post_pred, global_step, loss_list, metric_list, max_iterations):
 
 	model.train()
 	dice_val_best = 0.0
 	global_step_best = 0
 	epoch_loss = 0
 	step = 0
-	loss_list = list()
-	metric_list = list()
 
 	epoch_iterator = tqdm(
 	train_loader, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True
@@ -76,12 +72,14 @@ def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_fu
 		loss = loss_function(outputs, labels)
 		loss.backward()
 		optimizer.step()
+		epoch_loss += loss.item()
 		epoch_iterator.set_description(
 			"Training (%d / %d Steps) (loss=%2.5f)" % (global_step, max_iterations, loss)
 		)
-		if (global_step % eval_num == 0 and global_step != 0) or global_step == max_iterations: # FOR SAVING
-
-			epoch_iterator_val = tqdm(val_loader, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True)
+		if ( global_step % eval_num == 0 and global_step != 0) or global_step == max_iterations:
+			epoch_iterator_val = tqdm(
+				val_loader, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True
+			)
 			dice_val = validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size)
 			epoch_loss /= step
 			loss_list.append(epoch_loss)
@@ -126,7 +124,7 @@ def main(args):
 	utils.create_dir(dst_folder)
 	
 	print('Splitting dataset...\n')
-	# veela.split_dataset(info_dict, args.input_size, dst_folder, args.dataset_path, args.binary)
+	veela.split_dataset(info_dict, args.input_size, dst_folder, args.dataset_path, args.binary)
 
 	print('Creating JSON file...\n')
 	json_routes, dictionary_list = utils.create_json_file(dst_folder, info_dict, args.k)
@@ -142,7 +140,7 @@ def main(args):
 
 	loss_function = DiceCELoss(sigmoid=True, to_onehot_y=False)
 	torch.backends.cudnn.benchmark = True
-	optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+	optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 	# EXECUTE A TYPICAL PYTORCH TRAINING PROCESS
 	# max_iterations = 50000
@@ -151,6 +149,8 @@ def main(args):
 	post_pred = AsDiscrete(argmax=True, to_onehot = 2)
 	dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 	global_step = 0
+	loss_list = list()
+	metric_list = list()
 
 	while global_step < max_iterations:
 		global_step, dice_val_best, global_step_best, epoch_loss_values, metric_values = train(
@@ -164,6 +164,8 @@ def main(args):
 			post_label,
 			post_pred,
 			global_step,
+			loss_list,
+			metric_list,
 			args.max_it)
 
 	print(f"Train completed, best_metric: {dice_val_best:.4f} "f"at iteration: {global_step_best}")
@@ -173,7 +175,7 @@ def main(args):
 	plots.save_loss_metric(eval_num,epoch_loss_values, metric_values)
 
 	# SAVE SEGMENTATIONS
-	utils.save_segmentations(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.input_size, test_loader)
+	utils.save_segmentations(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.dataset_path, test_loader)
 
 if __name__ == '__main__':
 
@@ -184,7 +186,7 @@ if __name__ == '__main__':
 	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
 	parser.add_argument('-dataset_path', required = False, type=str, default='/home/guijosa/Documents/PythonDocs/UNETR/VEELA/dataset')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
-	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=25000)
+	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=30000)
 	parser.add_argument('-lr', required=False, type = float, help='Define learning rate', default=1e-4)
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 1)

@@ -49,4 +49,4 @@ def save_loss_metric(eval_num,epoch_loss_values, metric_values):
 	y = metric_values
 	plt.xlabel("Iteration")
 	plt.plot(x, y)
-	plt.savefig(current_path + 'metric.png')
+	plt.savefig(current_path + '/metric_loss.png')

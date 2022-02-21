@@ -258,7 +258,7 @@ def get_position(my_dict, key_dict, myvalue):
 			return idx
 
 
-def save_segmentations(model,weights_dir, json_dict, info_dict, size, test_loader):
+def save_segmentations(model,weights_dir, json_dict, info_dict, dataset_path, test_loader):
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
 	create_dir(output_route)
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
@@ -269,16 +269,17 @@ def save_segmentations(model,weights_dir, json_dict, info_dict, size, test_loade
 			pred = model(val_images)
 			pred = post_trans(decollate_batch(pred))
 
-			result = pred[0].squeeze().cpu().numpy().astype(np.uint8)
+			# result = pred[0].squeeze().cpu().numpy().astype(np.uint8)
+			result = pred[0].squeeze().cpu().numpy()
 
 			pos = get_position(info_dict, 'Image name', json_dict['test'][idx]['image'].split('/')[-1])
 			unresized_result = skTrans.resize(result, (
 				info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
 				info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
 				info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
-			), preserve_range=True).astype(np.uint8)
+			), preserve_range=True, order = 0, anti_aliasing=True)
 
-			result = np.zeros(info_dict['Volume shape'][pos]).astype(np.uint8)
+			result = np.zeros(info_dict['Volume shape'][pos])
 			result[
 				info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
 				info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
@@ -286,7 +287,7 @@ def save_segmentations(model,weights_dir, json_dict, info_dict, size, test_loade
 			] = unresized_result
 			output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 
-			groundtruth = info_dict['Portal nifti object'][pos].get_fdata()
+			groundtruth = nib.load(os.path.join(dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
 			# Compute dice metric
 			dice = 100.*DiceMetric(result.astype(np.bool), groundtruth.astype(np.bool))
 			print('Dice metric: {} %'.format(dice))
