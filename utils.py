@@ -13,17 +13,14 @@ from monai.config import PathLike
 from typing import Dict, List
 from monai.data import decollate_batch
 from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
-from typing import overload
 
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def create_dir(path):
-	if not  os.path.exists(path):
+	if not os.path.exists(path):
 		os.makedirs(path)
-
-
 
 def get_index_dict(my_dict):
 
@@ -299,18 +296,12 @@ def save_segmentations(model,weights_dir, json_dict, info_dict, size, test_loade
 
 def load_veela_datalist(data_list_file_path: PathLike, data_list_key: str = "training") -> List[Dict]:
 
-    data_list_file_path = Path(data_list_file_path)
-    if not data_list_file_path.is_file():
-        raise ValueError(f"Data list file {data_list_file_path} does not exist.")
-    with open(data_list_file_path) as json_file:
-        json_data = json.load(json_file)
-    if data_list_key not in json_data:
-        raise ValueError(f'Data list {data_list_key} not specified in "{data_list_file_path}".')
-    expected_data = json_data[data_list_key]
-    return expected_data
-
-
-
-
-
-
+	data_list_file_path = Path(data_list_file_path)
+	if not data_list_file_path.is_file():
+		raise ValueError(f"Data list file {data_list_file_path} does not exist.")
+	with open(data_list_file_path) as json_file:
+		json_data = json.load(json_file)
+	if data_list_key not in json_data:
+		raise ValueError(f'Data list {data_list_key} not specified in "{data_list_file_path}".')
+	expected_data = json_data[data_list_key]
+	return expected_data

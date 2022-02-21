@@ -4,18 +4,18 @@ from monai.data import(
 	DataLoader
 )
 from monai.transforms import (
-    AddChanneld,
-    Compose,
-    CropForegroundd,
-    LoadImaged,
-    Orientationd,
-    RandFlipd,
-    RandCropByPosNegLabeld,
-    RandShiftIntensityd,
-    NormalizeIntensityd,
-    Spacingd,
-    RandRotate90d,
-    ToTensord,
+	AddChanneld,
+	Compose,
+	CropForegroundd,
+	LoadImaged,
+	Orientationd,
+	RandFlipd,
+	RandCropByPosNegLabeld,
+	RandShiftIntensityd,
+	NormalizeIntensityd,
+	Spacingd,
+	RandRotate90d,
+	ToTensord,
 )
 import os
 from utils import load_veela_datalist

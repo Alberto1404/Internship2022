@@ -1,4 +1,3 @@
-import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import os
@@ -51,4 +50,3 @@ def save_loss_metric(eval_num,epoch_loss_values, metric_values):
 	plt.xlabel("Iteration")
 	plt.plot(x, y)
 	plt.savefig(current_path + 'metric.png')
-	plt.show()

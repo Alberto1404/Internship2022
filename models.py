@@ -1,6 +1,5 @@
 from monai.networks.nets import UNETR, UNet
 
-
 def get_model(model, binary_flag, img_size, feature_size, hidden_size, mlp_dim, num_heads, pos_embed, norm_name, res_block, dropout_rate):
 	if model == 'unet':
 		if binary_flag == True:
@@ -34,3 +33,5 @@ def get_model(model, binary_flag, img_size, feature_size, hidden_size, mlp_dim, 
 			res_block = res_block,
 			dropout_rate = dropout_rate
 		)
+
+	return model

@@ -1,9 +1,10 @@
-# Library imports
 import torch
 import argparse
 import os
 import numpy as np
 import glob
+
+from zmq import device
 
 # Dependent file imports
 import dataset_loader
@@ -28,7 +29,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 current_path = os.path.abspath(os.getcwd())
 eval_num = 500
 
-# Functions
 def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size):
 	model.eval()
 	dice_vals = list()
@@ -39,11 +39,11 @@ def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, 
 			val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
 			# val_labels_list = decollate_batch(val_labels)
 			# val_labels_convert = [
-			# 	post_label(val_label_tensor) for val_label_tensor in val_labels_list
+			#   post_label(val_label_tensor) for val_label_tensor in val_labels_list
 			# ]
 			# val_outputs_list = decollate_batch(val_outputs)
 			# val_output_convert = [
-			# 	post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
+			#   post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
 			# ]
 			dice_metric(y_pred=val_outputs, y=val_labels)
 			dice = dice_metric.aggregate().item()
@@ -55,29 +55,27 @@ def validation(model, global_step, epoch_iterator_val, dice_metric, post_label, 
 	mean_dice_val = np.mean(dice_vals)
 	return mean_dice_val
 
-
 def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_function, post_label, post_pred, global_step, max_iterations):
+
 	model.train()
 	dice_val_best = 0.0
 	global_step_best = 0
 	epoch_loss = 0
 	step = 0
-	epoch_loss_values = list()
-	metric_values = list()
+	loss_list = list()
+	metric_list = list()
 
 	epoch_iterator = tqdm(
-		train_loader, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True
+	train_loader, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True
 	)
 	for step, batch in enumerate(epoch_iterator):
 		step += 1
-		x, y = (batch["image"].to(device), batch["label"].to(device))
+		inputs, labels = (batch['image'].to(device), batch['label'].to(device))
 		optimizer.zero_grad()
-		logit_map = model(x)
-		loss = loss_function(logit_map, y)
+		outputs = model(inputs)
+		loss = loss_function(outputs, labels)
 		loss.backward()
-		epoch_loss += loss.item()
 		optimizer.step()
-		
 		epoch_iterator.set_description(
 			"Training (%d / %d Steps) (loss=%2.5f)" % (global_step, max_iterations, loss)
 		)
@@ -86,8 +84,8 @@ def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_fu
 			epoch_iterator_val = tqdm(val_loader, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True)
 			dice_val = validation(model, global_step, epoch_iterator_val, dice_metric, post_label, post_pred, size)
 			epoch_loss /= step
-			epoch_loss_values.append(epoch_loss)
-			metric_values.append(dice_val)
+			loss_list.append(epoch_loss)
+			metric_list.append(dice_val)
 			if dice_val > dice_val_best:
 				dice_val_best = dice_val
 				global_step_best = global_step
@@ -108,17 +106,11 @@ def train(model, size, train_loader, val_loader, optimizer, dice_metric, loss_fu
 					)
 				)
 		global_step += 1
-	return global_step, dice_val_best, global_step_best, epoch_loss_values, metric_values
+
+	return global_step, dice_val_best, global_step_best, loss_list, metric_list
 
 
 def main(args):
-
-	# SETUP TRANSFORMS FOR TRAINING AND VALIDATION
-	# Transformations called in dataset loader. 
-
-		print('Processing dataset...\n')
-	# DOWNLOAD DATASET AND FORMAT IN THE FOLDER
-
 	try: # Find DATASET_NAME.json in data directory, and directly load it if previously read from previous trainings
 		print('Finding ' + args.dataset + ' dictionary..')
 		glob.glob(current_path + '/' + args.dataset + '.json')[0]
@@ -134,9 +126,8 @@ def main(args):
 	utils.create_dir(dst_folder)
 	
 	print('Splitting dataset...\n')
-	veela.split_dataset(info_dict, args.dataset_path, args.input_size, dst_folder)
+	# veela.split_dataset(info_dict, args.input_size, dst_folder, args.dataset_path, args.binary)
 
-	# LOAD DATASET
 	print('Creating JSON file...\n')
 	json_routes, dictionary_list = utils.create_json_file(dst_folder, info_dict, args.k)
 	print('Creating train and valid loaders...\n')
@@ -147,7 +138,8 @@ def main(args):
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 	print('Creating model...\n')
 	model = models.get_model(args.net, args.binary, args.input_size, args.feature_size, args.hidden_size, args.mlp_dim, args.num_heads, args.pos_embed, args.norm_name, args.res_block, args.dropout_rate)
-	
+	model.to(device)
+
 	loss_function = DiceCELoss(sigmoid=True, to_onehot_y=False)
 	torch.backends.cudnn.benchmark = True
 	optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
@@ -183,25 +175,24 @@ def main(args):
 	# SAVE SEGMENTATIONS
 	utils.save_segmentations(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.input_size, test_loader)
 
-
-
 if __name__ == '__main__':
+
 	
 	parser = argparse.ArgumentParser(description='VEELA dataset segmentation with transformers')
 
 	parser.add_argument('-dataset', required=False, type=str, default = 'VEELA') # Future: add choices
 	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
-	parser.add_argument('-dataset_path', required = False, type=str, default='home2/alberto/data/VEELA/dataset')
+	parser.add_argument('-dataset_path', required = False, type=str, default='/home/guijosa/Documents/PythonDocs/UNETR/VEELA/dataset')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
-	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=1000)
+	parser.add_argument('-max_it', required=False, type=int, help='Number of iterations', default=25000)
 	parser.add_argument('-lr', required=False, type = float, help='Define learning rate', default=1e-4)
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 1)
 
-	parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
+	parser.add_argument('-net', required=False, type=str, default='unet', choices=('unet', 'unetr'))
 
 	# UNETR
-	parser.add_argument('--input_size', required=False, nargs='+', type = int, default=[128,128,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
+	parser.add_argument('--input_size', required=False, nargs='+', type = int, default=[256,256,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
 	parser.add_argument('-feature_size', required=False, type=int, default=16)
 	parser.add_argument('-hidden_size', required=False, type=int, default = 768)
 	parser.add_argument('-mlp_dim', required=False, type=int, default = 3072)
@@ -213,16 +204,7 @@ if __name__ == '__main__':
 	
 	args = parser.parse_args()
 
-	if args.binary == 'True':
-		args.binary = True
-	else:
-		args.binary = False
-
-	if args.res_block == 'True':
-		args.res_block = True
-	else:
-		args.res_block = False
-	
-	# Cast input size to tuple 
+	args.binary = bool(args.binary)
+	args.res_block = bool(args.res_block)
 	args.input_size = tuple(args.input_size)
 	main(args)
