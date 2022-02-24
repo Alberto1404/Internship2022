@@ -120,7 +120,7 @@ def transformations(size):
 	return train_transforms, val_transforms, test_transforms
 
 
-def get_train_valid_loader(size, json_routes):
+def get_train_valid_loader(args, json_routes):
 
 	datasets = json_routes[0] # BAD!!!!!!!! K-FOLD CROSS VALIDATION !!!!!
 
@@ -128,7 +128,7 @@ def get_train_valid_loader(size, json_routes):
 	val_files = load_veela_datalist(datasets, "validation")
 	test_files = load_veela_datalist(datasets, "test")
 	
-	train_transforms, val_transforms, test_transforms  = transformations(size)
+	train_transforms, val_transforms, test_transforms  = transformations(args.input_size)
 
 	train_ds = CacheDataset(
 		data=datalist,
@@ -138,19 +138,19 @@ def get_train_valid_loader(size, json_routes):
 		num_workers=8,
 	)
 	train_loader = DataLoader(
-		train_ds, batch_size=1, shuffle=True, num_workers=8, pin_memory=True
+		train_ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True
 	)
 	val_ds = CacheDataset(
 		data=val_files, transform=val_transforms, cache_num=5, cache_rate=1.0, num_workers=4
 	)
 	val_loader = DataLoader(
-		val_ds, batch_size=1, shuffle=False, num_workers=4, pin_memory=True
+		val_ds, batch_size=args.batch, shuffle=False, num_workers=4, pin_memory=True
 	)
 	test_ds = CacheDataset(
 		data = test_files, transform=test_transforms, cache_num = 7, cache_rate =1,	num_workers=4
 	)
 	test_loader = DataLoader(
-		test_ds, batch_size=1, shuffle = False, num_workers=2, pin_memory=True
+		test_ds, batch_size=args.batch, shuffle = False, num_workers=2, pin_memory=True
 	)
 	return train_loader, val_loader, test_loader, val_ds
 

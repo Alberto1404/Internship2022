@@ -66,13 +66,13 @@ def process_dataset(dict_names, dataset_path):
 	return dict_names
 
 
-def split_dataset(info_dict, size, dst_folder, dataset_path,is_binary):
+def split_dataset(info_dict, size, dst_folder, args):
 
 	# PIPELINE (INPUT)
 	for idx in tqdm(range(len(info_dict['Image name']))):
 		# NIFTI 2 NUMPY ND ARRAY
-		ima = nib.load(os.path.join(dataset_path, info_dict['Image name'][idx])).get_fdata()
-		ima_portal = nib.load(os.path.join(dataset_path, info_dict['Portal veins name'][idx])).get_fdata()# .astype(np.uint8)
+		ima = nib.load(os.path.join(args.dataset_path, info_dict['Image name'][idx])).get_fdata()
+		ima_portal = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][idx])).get_fdata()# .astype(np.uint8)
 		# 3D INDEXING
 		liver = ima[
 			info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
@@ -95,8 +95,8 @@ def split_dataset(info_dict, size, dst_folder, dataset_path,is_binary):
 		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 		nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
 
-		if not is_binary:
-			ima_hepatic = nib.load(os.path.join(dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
+		if not args.binary:
+			ima_hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
 			liver_hepatic = ima_hepatic[
 					info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
 					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
@@ -113,6 +113,6 @@ def split_dataset(info_dict, size, dst_folder, dataset_path,is_binary):
 
 			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')
-		
-		output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-		nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')
+		else:		
+			output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')

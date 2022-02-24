@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import torch
 import os
 import random
+import numpy as np
 
 from monai.inferers import sliding_window_inference
 
@@ -35,18 +36,18 @@ def plot_slices(model,val_ds, size, weights_dir, dictionary):
 		plt.imshow(torch.argmax(val_outputs, dim=1).detach().cpu()[0, :, :, dictionary[img_name]])
 		plt.show()
 
-def save_loss_metric(eval_num,epoch_loss_values, metric_values):
+def save_loss_metric(epoch_loss_values, metric_values):
 	plt.figure("train", (12, 6))
 	plt.subplot(1, 2, 1)
-	plt.title("Iteration Average Loss")
-	x = [eval_num * (i + 1) for i in range(len(epoch_loss_values))]
+	plt.title("Average Loss")
+	x = np.arange(len(epoch_loss_values)) + 1
 	y = epoch_loss_values
-	plt.xlabel("Iteration")
+	plt.xlabel("Epoch")
 	plt.plot(x, y)
 	plt.subplot(1, 2, 2)
 	plt.title("Val Mean Dice")
-	x = [eval_num * (i + 1) for i in range(len(metric_values))]
+	x = np.arange(len(metric_values)) + 1
 	y = metric_values
-	plt.xlabel("Iteration")
+	plt.xlabel("Epoch")
 	plt.plot(x, y)
 	plt.savefig(current_path + '/metric_loss.png')
