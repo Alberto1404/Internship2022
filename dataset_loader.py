@@ -13,7 +13,6 @@ from monai.transforms import (
 	RandCropByPosNegLabeld,
 	RandShiftIntensityd,
 	NormalizeIntensityd,
-	Spacingd,
 	RandRotate90d,
 	ToTensord,
 )
@@ -26,57 +25,44 @@ def transformations(size):
 		[
 			LoadImaged(keys=["image", "label"]),
 			AddChanneld(keys=["image", "label"]),
-			Spacingd(
-				keys=["image", "label"],
-				pixdim=(1.0, 1.0, 1.0),
-				mode=("bilinear", "nearest"),
-			),
 			Orientationd(keys=["image", "label"], axcodes="RAS"),
-			# ScaleIntensityRanged(
-			#     keys=["image"],
-			#     a_min=-175,
-			#     a_max=250,
-			#     b_min=0.0,
-			#     b_max=1.0,
-			#     clip=True,
+			CropForegroundd(keys=["image", "label"], source_key="image"),
+			# RandCropByPosNegLabeld(
+			# 	keys=["image", "label"],
+			# 	label_key="label",
+			# 	spatial_size=size,
+			# 	pos=1,
+			# 	neg=1,
+			# 	num_samples=4,
+			# 	image_key="image",
+			# 	image_threshold=0,
+			# ),
+			# RandFlipd(
+			# 	keys=["image", "label"],
+			# 	spatial_axis=[0],
+			# 	prob=0.10,
+			# ),
+			# RandFlipd(
+			# 	keys=["image", "label"],
+			# 	spatial_axis=[1],
+			# 	prob=0.10,
+			# ),
+			# RandFlipd(
+			# 	keys=["image", "label"],
+			# 	spatial_axis=[2],
+			# 	prob=0.10,
+			# ),
+			# RandRotate90d(
+			# 	keys=["image", "label"],
+			# 	prob=0.10,
+			# 	max_k=3,
+			# ),
+			# RandShiftIntensityd(
+			# 	keys=["image"],
+			# 	offsets=0.10,
+			# 	prob=0.50,
 			# ),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-			CropForegroundd(keys=["image", "label"], source_key="image"),
-			RandCropByPosNegLabeld(
-				keys=["image", "label"],
-				label_key="label",
-				spatial_size=size,
-				pos=1,
-				neg=1,
-				num_samples=4,
-				image_key="image",
-				image_threshold=0,
-			),
-			RandFlipd(
-				keys=["image", "label"],
-				spatial_axis=[0],
-				prob=0.10,
-			),
-			RandFlipd(
-				keys=["image", "label"],
-				spatial_axis=[1],
-				prob=0.10,
-			),
-			RandFlipd(
-				keys=["image", "label"],
-				spatial_axis=[2],
-				prob=0.10,
-			),
-			RandRotate90d(
-				keys=["image", "label"],
-				prob=0.10,
-				max_k=3,
-			),
-			RandShiftIntensityd(
-				keys=["image"],
-				offsets=0.10,
-				prob=0.50,
-			),
 			ToTensord(keys=["image", "label"]),
 		]
 	)
@@ -84,17 +70,9 @@ def transformations(size):
 		[
 			LoadImaged(keys=["image", "label"]),
 			AddChanneld(keys=["image", "label"]),
-			Spacingd(
-				keys=["image", "label"],
-				pixdim=(1.0, 1.0, 1.0),
-				mode=("bilinear", "nearest"),
-			),
 			Orientationd(keys=["image", "label"], axcodes="RAS"),
-			# ScaleIntensityRanged(
-			#     keys=["image"], a_min=-175, a_max=250, b_min=0.0, b_max=1.0, clip=True
-			# ),
-			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			CropForegroundd(keys=["image", "label"], source_key="image"),
+			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			ToTensord(keys=["image", "label"]),
 		]
 	)
@@ -103,17 +81,9 @@ def transformations(size):
 		[
 			LoadImaged(keys=["image", "label"]),
 			AddChanneld(keys=["image", "label"]),
-			Spacingd(
-				keys=["image", "label"],
-				pixdim=(1.0, 1.0, 1.0),
-				mode=("bilinear", "nearest"),
-			),
 			Orientationd(keys=["image", "label"], axcodes="RAS"),
-			# ScaleIntensityRanged(
-			#     keys=["image"], a_min=-175, a_max=250, b_min=0.0, b_max=1.0, clip=True
-			# ),
-			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			CropForegroundd(keys=["image", "label"], source_key="image"),
+			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			ToTensord(keys=["image", "label"]),
 		]
 	)
@@ -134,23 +104,23 @@ def get_train_valid_loader(args, json_routes):
 		data=datalist,
 		transform=train_transforms,
 		cache_num=23,
-		cache_rate=1.0,
-		num_workers=8,
+		# cache_rate=1.0,
+		num_workers=4,
 	)
 	train_loader = DataLoader(
-		train_ds, batch_size=args.batch, shuffle=True, num_workers=8, pin_memory=True
+		train_ds, batch_size=args.batch, shuffle=True, num_workers=4, pin_memory=True
 	)
 	val_ds = CacheDataset(
-		data=val_files, transform=val_transforms, cache_num=5, cache_rate=1.0, num_workers=4
+		data=val_files, transform=val_transforms, cache_num=5, num_workers=4
 	)
 	val_loader = DataLoader(
 		val_ds, batch_size=args.batch, shuffle=False, num_workers=4, pin_memory=True
 	)
 	test_ds = CacheDataset(
-		data = test_files, transform=test_transforms, cache_num = 7, cache_rate =1,	num_workers=4
+		data = test_files, transform=test_transforms, cache_num = 7, num_workers=4
 	)
 	test_loader = DataLoader(
-		test_ds, batch_size=args.batch, shuffle = False, num_workers=2, pin_memory=True
+		test_ds, batch_size=args.batch, shuffle = False, num_workers=4, pin_memory=True
 	)
 	return train_loader, val_loader, test_loader, val_ds
 

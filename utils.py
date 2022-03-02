@@ -7,6 +7,8 @@ import skimage.transform as skTrans
 import nibabel as nib
 import statistics
 
+import veela
+
 from medpy.metric.binary import dc as DiceMetric
 from tqdm import tqdm
 from pathlib import Path
@@ -18,16 +20,22 @@ from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def split_dataset(info_dict, dst_folder, args):
+	if not os.path.exists(dst_folder) or len(os.listdir(dst_folder)) == 0:
+		veela.split_dataset(info_dict, dst_folder,args)
+	else:
+		print('Dataset already splitted.\n')
 
-def create_dir(path):
+
+def create_dir(path, remove_flag):
 	if not os.path.exists(path):
 		os.makedirs(path)
 
-	else:
+	if remove_flag == True:
 		for file in os.listdir(path):
 			os.remove(os.path.join(path,file))
 		os.rmdir(path)
-		create_dir(path)
+		create_dir(path, False)
 
 def get_index_dict(my_dict):
 
@@ -276,7 +284,7 @@ def get_list_of_pos(json_dict, info_dict, key):
 
 def save_segmentations(model,weights_dir, json_dict, info_dict, dataset_path, test_loader, batch_size):
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
-	create_dir(output_route)
+	create_dir(output_route, remove_flag=True)
 	dices = list()
 	idxlist = get_list_of_pos(json_dict, info_dict, 'Image name')
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))

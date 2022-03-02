@@ -66,7 +66,7 @@ def process_dataset(dict_names, dataset_path):
 	return dict_names
 
 
-def split_dataset(info_dict, size, dst_folder, args):
+def split_dataset(info_dict, dst_folder, args):
 
 	# PIPELINE (INPUT)
 	for idx in tqdm(range(len(info_dict['Image name']))):
@@ -85,8 +85,8 @@ def split_dataset(info_dict, size, dst_folder, args):
 			info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
 		]
 		# RESIZE
-		resized_liver = skTrans.resize(liver, size, order = 1, preserve_range=True, anti_aliasing = True)
-		resized_liver_portal = skTrans.resize(liver_portal, size, order = 0, preserve_range=True, anti_aliasing = True)
+		resized_liver = skTrans.resize(liver, args.input_size, order = 1, preserve_range=True, anti_aliasing = True)
+		resized_liver_portal = skTrans.resize(liver_portal, args.input_size, order = 0, preserve_range=True, anti_aliasing = True)
 
 		resized_liver_portal[np.where(resized_liver_portal > 0.95)] = 1
 		resized_liver_portal[np.where(resized_liver_portal != 1)] = 0
@@ -102,11 +102,11 @@ def split_dataset(info_dict, size, dst_folder, args):
 					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
 					info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
 				]
-			resized_liver_hepatic = skTrans.resize(liver_hepatic, size, order = 0, preserve_range=True, anti_aliasing = True)
+			resized_liver_hepatic = skTrans.resize(liver_hepatic, args.input_size, order = 0, preserve_range=True, anti_aliasing = True)
 			resized_liver_hepatic[np.where(resized_liver_hepatic > 0.95)] = 1
 			resized_liver_hepatic[np.where(resized_liver_hepatic != 1)] = 0
 
-			resized_multilabel = np.zeros((2,size[0],size[1],size[2]))
+			resized_multilabel = np.zeros((2,args.input_size[0],args.input_size[1],args.input_size[2]))
 
 			resized_multilabel[0,:,:,:] = resized_liver_portal
 			resized_multilabel[1,:,:,:] = resized_liver_hepatic
