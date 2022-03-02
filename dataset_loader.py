@@ -80,7 +80,6 @@ def transformations(size):
 			LoadImaged(keys=["image", "label"]),
 			AddChanneld(keys=["image", "label"]),
 			Orientationd(keys=["image", "label"], axcodes="RAS"),
-			# CropForegroundd(keys=["image", "label"], source_key="image"),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			ToTensord(keys=["image", "label"]),
 		]
