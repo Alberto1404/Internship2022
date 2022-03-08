@@ -5,6 +5,12 @@ import skimage.transform as skTrans
 
 from tqdm import tqdm
 
+def binarize(volume):
+	volume[volume > 0.95] = 1
+	volume[volume != 1] = 0
+
+	return volume
+
 
 def get_liver_bounding_box(liver):
 
@@ -88,8 +94,9 @@ def split_dataset(info_dict, dst_folder, args):
 		resized_liver = skTrans.resize(liver, args.input_size, order = 1, preserve_range=True, anti_aliasing = True)
 		resized_liver_portal = skTrans.resize(liver_portal, args.input_size, order = 0, preserve_range=True, anti_aliasing = True)
 
-		resized_liver_portal[np.where(resized_liver_portal > 0.95)] = 1
-		resized_liver_portal[np.where(resized_liver_portal != 1)] = 0
+		resized_liver_portal = binarize(resized_liver_portal)
+		# resized_liver_portal[np.where(resized_liver_portal > 0.95)] = 1
+		# resized_liver_portal[np.where(resized_liver_portal != 1)] = 0
 
 		# SAVE RESIZED IMAGE
 		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
@@ -97,6 +104,24 @@ def split_dataset(info_dict, dst_folder, args):
 
 		if not args.binary:
 			ima_hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
+			liver_hepatic = ima_hepatic[
+					info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
+					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
+					info_dict['Liver coordinates'][idx][4]:info_dict['Liver coordinates'][idx][5] + 1
+				]
+			resized_liver_hepatic = skTrans.resize(liver_hepatic, args.input_size, order = 0, preserve_range=True, anti_aliasing = True)
+			resized_liver_hepatic = binarize(resized_liver_hepatic)
+			# resized_liver_hepatic[np.where(resized_liver_hepatic > 0.95)] = 1
+			# resized_liver_hepatic[np.where(resized_liver_hepatic != 1)] = 0
+			resized_liver_hepatic[np.where(resized_liver_hepatic == 1)] = 2 # Assign new label
+
+			resized_multilabel = np.zeros_like(ima_hepatic)
+			resized_multilabel = resized_liver_portal + resized_liver_hepatic
+
+			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')
+
+			"""ima_hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
 			liver_hepatic = ima_hepatic[
 					info_dict['Liver coordinates'][idx][0]:info_dict['Liver coordinates'][idx][1] + 1,
 					info_dict['Liver coordinates'][idx][2]:info_dict['Liver coordinates'][idx][3] + 1,
@@ -112,7 +137,7 @@ def split_dataset(info_dict, dst_folder, args):
 			resized_multilabel[1,:,:,:] = resized_liver_hepatic
 
 			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')
+			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')"""
 		else:		
 			output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 			nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_GT.nii.gz')
