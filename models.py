@@ -10,7 +10,7 @@ from torch import sigmoid
 sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice'))
 from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
-def get_model(args):
+def get_model_loss(args):
 
 
 	if args.net == 'unet':

@@ -22,19 +22,22 @@ from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 def split_dataset(info_dict, dst_folder, args):
 	if not os.path.exists(dst_folder) or len(os.listdir(dst_folder)) == 0:
-		veela.split_dataset(info_dict, dst_folder,args)
+		veela.pipeline_1(info_dict, dst_folder,args)
 	else:
 		print('Dataset already splitted.\n')
 
 
 def create_dir(path, remove_folder):
+	# If directory does not exists
 	if not os.path.exists(path):
 		os.makedirs(path)
 
-	if remove_folder == True:
+	# If it does: 
+	# - remove_folder = False -> Do nothing
+	# - remove_folder = True -> Remove the content of the folder as well as the folder, and recursively calls itself to create the folder again
+	if remove_folder:
 		for file in os.listdir(path):
 			os.remove(os.path.join(path,file))
 		os.rmdir(path)
@@ -66,7 +69,6 @@ def kfcv(dataset, k):
 		folds_training[:,fold] = training
 		folds_validation[:,fold] = validation
 
-
 	"""print('Performing K-Fold Cross-Vailidation... ')
 	data_backup = dataset.copy() # Dataset is the list with all the idxs
 
@@ -89,12 +91,12 @@ def kfcv(dataset, k):
 
 	return folds_training.astype(int), folds_validation.astype(int), folds_test.astype(int)
 
-def open_json_file(directory):
+def json2dict(directory):
 	with open(directory) as json_file:
 		dictionary = json.load(json_file)
 	return dictionary
 
-def save_dataset_dict(info_dict, dataset_name, save_dir):
+def dict2json(info_dict, dataset_name, save_dir):
 
 	# save_dir = 'home2/alberto/data' # '...'
 	# Serializing json 
@@ -112,7 +114,7 @@ def create_json_file(dst_folder, info_dict, args): # Add segmentation flag for f
 	folds_training, folds_validation, folds_test = kfcv(indexes_list, args.k)
 	json_routes = list()
 	dictionary_list = list()
-	ending = '-VE-liver_multi_GT' if args.binary == False else '-VE-liver_por_GT'
+	ending = '-VE-liver_multi_GT' if args.binary == False else '-VE-liver_por_GT' # Define as desired
 
 	for fold in tqdm(range(np.shape(folds_training)[1])):
 		# Data to be written
@@ -292,7 +294,7 @@ def get_list_of_pos(json_dict, info_dict, key):
 
 	return idxlist
 
-def save_segmentations(model,weights_dir, json_dict, info_dict, test_loader, args):
+def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
 	create_dir(output_route, remove_folder=True)
 	dices_portal = list()
@@ -308,81 +310,57 @@ def save_segmentations(model,weights_dir, json_dict, info_dict, test_loader, arg
 			pred = post_trans(decollate_batch(pred)) # Length of pred accordingly to batchsize
 			
 			for result in pred:
-				
+
+				# NETWORK OUTPUT
 				result = result.squeeze().cpu().numpy()
 				pos = idxlist[0]
 				if not args.binary:
+
+					# NETWORK OUTPUT 
 					portal = result[1,:,:,:]
 					hepatic = result[2,:,:,:]
 
-					unresized_portal = skTrans.resize(portal, (
-						info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
-						info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
-						info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
-					), preserve_range=True, order = 0, anti_aliasing=True)
+					# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
+					unresized_portal = veela.resize(portal, info_dict, pos)
+					unresized_hepatic = veela.resize(hepatic, info_dict, pos)
 
-					unresized_hepatic = skTrans.resize(hepatic, (
-						info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
-						info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
-						info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
-					), preserve_range=True, order = 0, anti_aliasing=True)
-				
-					result_portal = np.zeros(info_dict['Volume shape'][pos])
-					result_hepatic = np.zeros_like(result_portal)
+					unresized_portal = veela.binarize(unresized_portal,1)
+					unresized_hepatic = veela.binarize(unresized_hepatic,2)
 
-					unresized_portal = veela.binarize(unresized_portal)
-					unresized_hepatic = veela.binarize(unresized_hepatic)
-					unresized_hepatic[unresized_hepatic == 1] = 2
+					# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+					result_portal = veela.index_liver_in_volume(unresized_portal, info_dict, pos)
+					result_hepatic = veela.index_liver_in_volume(unresized_hepatic, info_dict, pos)
 
-					result_portal[
-						info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
-						info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
-						info_dict['Liver coordinates'][pos][4]:info_dict['Liver coordinates'][pos][5] + 1 
-					] = unresized_portal
-
-					result_hepatic[
-						info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
-						info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
-						info_dict['Liver coordinates'][pos][4]:info_dict['Liver coordinates'][pos][5] + 1 
-					] = unresized_hepatic
-
+					# NUMPY 2 NIFTI
 					output_portal = nib.Nifti1Image(result_portal, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 					output_hepatic = nib.Nifti1Image(result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-					output_join = nib.Nifti1Image(result_portal + result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+					output_multi = nib.Nifti1Image(result_portal + result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 
 					portal_gt = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
 					hepatic_gt = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
+					gt_multi = nib.Nifti1Image(veela.binarize(portal_gt,1) + veela.binarize(hepatic_gt,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 
+					# DICE METRIC COMPUTATION ON TEST LOADER
 					dice_portal = 100.*DiceMetric(result_portal.astype(np.bool), portal_gt.astype(np.bool))
 					dice_hepatic = 100.*DiceMetric(result_hepatic.astype(np.bool), hepatic_gt.astype(np.bool))
 					dices_portal.append(dice_portal)
 					dices_hepatic.append(dice_hepatic)
 					print('Dice metric for portal veins: {} %\nDice metric for hepatic veins: {} %\n'.format(dice_portal, dice_hepatic))
 
-					portal_gt = veela.binarize(portal_gt)
-					hepatic_gt = veela.binarize(hepatic_gt)
-					hepatic_gt[hepatic_gt == 1] = 2
-					nib.save(nib.Nifti1Image(portal_gt + hepatic_gt, info_dict['Affine matrix'][pos], info_dict['Header'][pos]), output_route + '/' + info_dict['Image name'][pos] + '_join_GT.nii.gz')
-
 					nib.save(output_portal, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
 					nib.save(output_hepatic, output_route + '/' + info_dict['Image name'][pos] + '_hep_segmented.nii.gz')
-					nib.save(output_join, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
+					nib.save(output_multi, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
+					nib.save(gt_multi, output_route + '/' + info_dict['Image name'][pos] + '_gt_join_segmented.nii.gz')
 
 				else:
+					# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
+					unresized_result = veela.resize(result, info_dict, pos)
+					unresized_result = veela.binarize(unresized_result)
 
+					# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+					result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
 
-					unresized_result = skTrans.resize(result, (
-						info_dict['Liver coordinates'][pos][1] - info_dict['Liver coordinates'][pos][0] + 1,
-						info_dict['Liver coordinates'][pos][3] - info_dict['Liver coordinates'][pos][2] + 1,
-						info_dict['Liver coordinates'][pos][5] - info_dict['Liver coordinates'][pos][4] + 1 
-					), preserve_range=True, order = 0, anti_aliasing=True)
-
-					result = np.zeros(info_dict['Volume shape'][pos])
-					result[
-						info_dict['Liver coordinates'][pos][0]:info_dict['Liver coordinates'][pos][1] + 1,
-						info_dict['Liver coordinates'][pos][2]:info_dict['Liver coordinates'][pos][3] + 1,
-						info_dict['Liver coordinates'][pos][4]:info_dict['Liver coordinates'][pos][5] + 1 
-					] = unresized_result
+					# NUMPY 2 NIFTI
 					output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 
 					groundtruth = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
@@ -394,11 +372,11 @@ def save_segmentations(model,weights_dir, json_dict, info_dict, test_loader, arg
 					nib.save(output_ima, output_route + '/' + info_dict['Image name'][pos] + '_segmented.nii.gz')
 				idxlist.pop(0)
 	
-	if args.binary:
-		with open('./dices.txt', 'w') as f:
+
+	with open('./dices.txt', 'w') as f:
+		if args.binary:
 			f.write('Mean: {}\nStd: {}\n'.format(np.mean(dices_portal), statistics.stdev(dices_portal)))
-	else:
-		with open('./dices.txt', 'w') as f:
+		else:
 			f.write('Portal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\n'.format(
 				np.mean(dices_portal), statistics.stdev(dices_portal),
 				np.mean(dices_hepatic), statistics.stdev(dices_hepatic),
