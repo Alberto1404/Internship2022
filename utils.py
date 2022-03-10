@@ -11,15 +11,21 @@ import statistics
 
 import veela
 
-from medpy.metric.binary import dc as DiceMetric
+# from medpy.metric.binary import dc as DiceMetric
+from monai.metrics import DiceMetric
 from tqdm import tqdm
 from pathlib import Path
 from monai.config import PathLike
+from monai.inferers import sliding_window_inference
 from typing import Dict, List
 from monai.data import decollate_batch
 from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+
+post_label = Compose([EnsureType(), AsDiscrete(to_onehot=3)])
+post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=3)])
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def split_dataset(info_dict, dst_folder, args):
@@ -297,83 +303,169 @@ def get_list_of_pos(json_dict, info_dict, key):
 def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
 	create_dir(output_route, remove_folder=True)
-	dices_portal = list()
-	dices_hepatic = list()
+	dices = list()
+	dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 	idxlist = get_list_of_pos(json_dict, info_dict, 'Image name')
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
 	model.eval()
 
 	with torch.no_grad():
 		for test_data in test_loader:
-			test_images, val_labels = test_data["image"].to(device), test_data["label"].to(device)
-			pred = model(test_images)
-			pred = post_trans(decollate_batch(pred)) # Length of pred accordingly to batchsize
-			
-			for result in pred:
+			test_inputs, test_labels = test_data["image"].to(device), test_data["label"].to(device)
+			prediction = model(test_inputs)
 
-				# NETWORK OUTPUT
-				result = result.squeeze().cpu().numpy()
+			if not args.binary:
+				prob = sliding_window_inference(test_inputs, args.input_size, 4, model)
+				test_labels_list = decollate_batch(test_labels)
+				test_labels = [
+					post_label(test_label_tensor) for test_label_tensor in test_labels_list
+				]
+				test_outputs_list = decollate_batch(prob)
+				prediction = [
+					post_pred(test_pred_tensor) for test_pred_tensor in test_outputs_list
+				]
+
+				""" # METODO DE LOS TUTORIALES USANDO SLIDING WINDOW INFERENCE
+				prob = sliding_window_inference(test_inputs, args.input_size, 4, model)
+				prediction = torch.argmax(prob, dim = 1)
+				prediction = prediction.unsqueeze(dim = 1)"""
+				""" # METODO DE PIERRE-HENRI
+				prob = torch.softmax(prediction, dim = 1)
+				prediction = torch.argmax(prob, dim = 1)
+				prediction = prediction.unsqueeze(dim = 1)"""
+
+				
+			else:
+				prediction = post_trans(decollate_batch(prediction)) # Comprobar np.unique(prediction)
+
+			for input, mask in zip(prediction, test_labels):
+
+				dice_metric(y_pred=input, y=mask) 
+				dice = 100 * dice_metric.aggregate().item()
+				print("Dice score: {} %".format(dice))
+				dices.append(dice)
+
 				pos = idxlist[0]
-				if not args.binary:
-
-					# NETWORK OUTPUT 
-					portal = result[1,:,:,:]
-					hepatic = result[2,:,:,:]
-
-					# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
-					unresized_portal = veela.resize(portal, info_dict, pos)
-					unresized_hepatic = veela.resize(hepatic, info_dict, pos)
-
-					unresized_portal = veela.binarize(unresized_portal,1)
-					unresized_hepatic = veela.binarize(unresized_hepatic,2)
-
-					# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
-					result_portal = veela.index_liver_in_volume(unresized_portal, info_dict, pos)
-					result_hepatic = veela.index_liver_in_volume(unresized_hepatic, info_dict, pos)
-
-					# NUMPY 2 NIFTI
-					output_portal = nib.Nifti1Image(result_portal, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-					output_hepatic = nib.Nifti1Image(result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-					output_multi = nib.Nifti1Image(result_portal + result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-					portal_gt = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
-					hepatic_gt = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
-					gt_multi = nib.Nifti1Image(veela.binarize(portal_gt,1) + veela.binarize(hepatic_gt,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-					# DICE METRIC COMPUTATION ON TEST LOADER
-					dice_portal = 100.*DiceMetric(result_portal.astype(np.bool), portal_gt.astype(np.bool))
-					dice_hepatic = 100.*DiceMetric(result_hepatic.astype(np.bool), hepatic_gt.astype(np.bool))
-					dices_portal.append(dice_portal)
-					dices_hepatic.append(dice_hepatic)
-					print('Dice metric for portal veins: {} %\nDice metric for hepatic veins: {} %\n'.format(dice_portal, dice_hepatic))
-
-					nib.save(output_portal, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
-					nib.save(output_hepatic, output_route + '/' + info_dict['Image name'][pos] + '_hep_segmented.nii.gz')
-					nib.save(output_multi, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
-					nib.save(gt_multi, output_route + '/' + info_dict['Image name'][pos] + '_gt_join_segmented.nii.gz')
-
+				if args.binary:
+					prediction = input.squeeze().cpu().numpy().astype(np.float32)
 				else:
-					# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
-					unresized_result = veela.resize(result, info_dict, pos)
+					prediction = input.squeeze().cpu().numpy().argmax(axis = 0).astype(np.float32)
+				# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CASUED BY RESIZING
+				unresized_result = veela.resize(prediction, info_dict, pos)
+				
+				if not args.binary: # "BINARIZATION" FOR MULTICLASS
+					unresized_result = np.round(unresized_result)
+				else:
 					unresized_result = veela.binarize(unresized_result)
+				
 
-					# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
-					result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
+				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+				result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
 
-					# NUMPY 2 NIFTI
-					output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-					groundtruth = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
-					# Compute dice metric
-					dice = 100.*DiceMetric(result.astype(np.bool), groundtruth.astype(np.bool))
-					dices_portal.append(dice)
-					print('Dice metric: {} %'.format(dice))
-
-					nib.save(output_ima, output_route + '/' + info_dict['Image name'][pos] + '_segmented.nii.gz')
+				# NUMPY 2 NIFTI
+				output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+				if not args.binary:
+					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
+				else:
+					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
 				idxlist.pop(0)
-	
+		dice_metric.reset()
+			
 
 	with open('./dices.txt', 'w') as f:
+		f.write('Mean: {}\nStd: {}\n'.format(np.mean(dices), statistics.stdev(dices)))
+		##############################################################################################################
+		"""if not args.binary:
+			prob = torch.softmax(prediction, dim = 1)
+			pred = torch.argmax(prob, dim = 1)
+			pred_mask = pred.squeeze().cpu().numpy().astype(np.float32)
+			gt_mask = test_labels.squeeze().unsqueeze(dim = 0)
+			pos = idxlist[0]
+
+			dice_metric(y_pred=pred, y=gt_mask) 
+			dice = 100 * dice_metric.aggregate().item()
+			print("Dice score: {} %".format(dice))
+			dices.append(dice)
+
+			unresized_prediction = np.round(veela.resize(pred_mask, info_dict, pos)) # Check np.unique(unresized_prediction) HERE
+
+			result = veela.index_liver_in_volume(unresized_prediction, info_dict, pos)
+
+			output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+			nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')"""
+
+		
+
+
+
+
+
+
+		#####################################################################################################################
+		"""test_inputs, test_labels = test_data["image"].to(device), test_data["label"].to(device)
+		pred = model(test_inputs)
+		pred = post_trans(decollate_batch(pred)) # Length of pred accordingly to batchsize
+		
+		for result in pred:
+
+			# NETWORK OUTPUT
+			result = result.squeeze().cpu().numpy()
+			pos = idxlist[0]
+			if not args.binary:
+
+				# NETWORK OUTPUT 
+				portal = result[1,:,:,:]
+				hepatic = result[2,:,:,:]
+
+				# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
+				unresized_portal = veela.resize(portal, info_dict, pos)
+				unresized_hepatic = veela.resize(hepatic, info_dict, pos)
+
+				unresized_portal = veela.binarize(unresized_portal,1)
+				unresized_hepatic = veela.binarize(unresized_hepatic,2)
+
+				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+				result_portal = veela.index_liver_in_volume(unresized_portal, info_dict, pos)
+				result_hepatic = veela.index_liver_in_volume(unresized_hepatic, info_dict, pos)
+
+				# NUMPY 2 NIFTI
+				output_portal = nib.Nifti1Image(result_portal, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+				output_hepatic = nib.Nifti1Image(result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+				output_multi = nib.Nifti1Image(result_portal + result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+
+				portal_gt = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
+				hepatic_gt = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
+				gt_multi = nib.Nifti1Image(veela.binarize(portal_gt,1) + veela.binarize(hepatic_gt,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+
+				# DICE METRIC COMPUTATION ON TEST LOADER
+				dice_portal = 100.*DiceMetric(result_portal.astype(np.bool), portal_gt.astype(np.bool))
+				dice_hepatic = 100.*DiceMetric(result_hepatic.astype(np.bool), hepatic_gt.astype(np.bool))
+				dices_portal.append(dice_portal)
+				dices_hepatic.append(dice_hepatic)
+				print('Dice metric for portal veins: {} %\nDice metric for hepatic veins: {} %\n'.format(dice_portal, dice_hepatic))
+
+				nib.save(output_portal, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
+				nib.save(output_hepatic, output_route + '/' + info_dict['Image name'][pos] + '_hep_segmented.nii.gz')
+				nib.save(outpidxlist.pop(0)ult = veela.resize(result, info_dict, pos)
+				unresized_result = veela.binarize(unresized_result)
+
+				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+				result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
+
+				# NUMPY 2 NIFTI
+				output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+
+				groundtruth = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
+				# Compute dice metric
+				dice = 100.*DiceMetric(result.astype(np.bool), groundtruth.astype(np.bool))
+				dices_portal.append(dice)
+				print('Dice metric: {} %'.format(dice))
+
+				nib.save(output_ima, output_route + '/' + info_dict['Image name'][pos] + '_segmented.nii.gz')"""
+			# idxlist.pop(0)
+	
+
+	"""with open('./dices.txt', 'w') as f:
 		if args.binary:
 			f.write('Mean: {}\nStd: {}\n'.format(np.mean(dices_portal), statistics.stdev(dices_portal)))
 		else:
@@ -381,7 +473,7 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 				np.mean(dices_portal), statistics.stdev(dices_portal),
 				np.mean(dices_hepatic), statistics.stdev(dices_hepatic),
 				np.mean(dices_portal+dices_hepatic), statistics.stdev(dices_portal + dices_hepatic)
-			))
+			))"""
 
 
 def load_veela_datalist(data_list_file_path: PathLike, data_list_key: str = "training") -> List[Dict]:

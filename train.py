@@ -49,11 +49,11 @@ def validation(model, val_loader, dice_metric, loss_function, post_label, post_p
 			else:
 				val_labels_list = decollate_batch(val_labels)
 				val_labels_convert = [
-				  post_label(val_label_tensor) for val_label_tensor in val_labels_list
+					post_label(val_label_tensor) for val_label_tensor in val_labels_list
 				]
 				val_outputs_list = decollate_batch(val_outputs_)
 				val_output_convert = [
-				  post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
+					post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
 				]
 				dice_metric(y_pred=val_output_convert, y=val_labels_convert)
 
@@ -183,7 +183,7 @@ def main(args):
 	dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 	loss_list_tr, loss_list_ts, metric_list = list(), list(), list()
 
-	loss_list_tr, metric_list, loss_list_ts = train(
+	"""loss_list_tr, metric_list, loss_list_ts = train(
 		model,
 		train_loader,
 		val_loader,
@@ -194,10 +194,10 @@ def main(args):
 		loss_list_ts,
 		metric_list,
 		args
-	)
+	)"""
 	
 	# SAVE ACCURACY / LOSS PLOTS
-	plots.save_loss_metric(loss_list_tr, metric_list, loss_list_ts)
+	# plots.save_loss_metric(loss_list_tr, metric_list, loss_list_ts)
 
 	# SAVE SEGMENTATIONS
 	# utils.pipeline_2(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.dataset_path, test_loader, args.batch)
@@ -218,7 +218,7 @@ if __name__ == '__main__':
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 5)
 
-	parser.add_argument('-net', required=False, type=str, default='unet', choices=('unet', 'unetr'))
+	parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
 	parser.add_argument('-cldice', required=False, type=str, default='False', choices=('False', 'True'))
 
 	# UNETR
