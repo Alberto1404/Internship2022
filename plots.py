@@ -36,10 +36,13 @@ def plot_slices(model,val_ds, size, weights_dir, dictionary):
 		plt.imshow(torch.argmax(val_outputs, dim=1).detach().cpu()[0, :, :, dictionary[img_name]])
 		plt.show()
 
-def save_loss_metric(epoch_loss_values, metric_values, loss_validation):
+def save_loss_metric(epoch_loss_values, metric_values, loss_validation, args):
 	plt.figure("train", (12, 6))
 	plt.subplot(1, 2, 1)
-	plt.title("Average Loss")
+	if args.metric == 'softdice':
+		plt.title("ClDice Loss")
+	else:
+		plt.title("Dice Cross Entropy Loss")
 	x = np.arange(len(epoch_loss_values)) + 1
 	y = epoch_loss_values
 	y2 = loss_validation
@@ -48,7 +51,14 @@ def save_loss_metric(epoch_loss_values, metric_values, loss_validation):
 	plt.plot(x,y2)
 	plt.legend(['Training', 'Validation'])
 	plt.subplot(1, 2, 2)
-	plt.title("Val Mean Dice")
+	if args.metric == 'dice':
+		plt.title("Validation dice")
+	elif args.metric == 'haus':
+		plt.title('Validation Haussdorf distance')
+	elif args.metric == 'surfdist':
+		plt.title('Validation Surface distance')
+	else:
+		plt.title('Validation Soft Cldice metric')
 	x = np.arange(len(metric_values)) + 1
 	y = metric_values
 	plt.xlabel("Epoch")

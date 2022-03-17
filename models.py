@@ -1,5 +1,5 @@
 from monai.networks.nets import UNETR, UNet
-from monai.losses import DiceCELoss, DiceLoss
+from monai.losses import DiceCELoss
 
 import sys
 import os
@@ -7,7 +7,7 @@ import os
 from torch import sigmoid
 
 # Add topology functions
-sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice'))
+sys.path.insert(0,os.path.join('/home2/alberto/code', 'clDice')) # Modify topology path
 from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
 def get_model_loss(args):
@@ -39,10 +39,10 @@ def get_model_loss(args):
 		)
 
 	# loss_function = soft_dice_cldice() if args.cldice == True else (DiceCELoss(sigmoid=True, to_onehot_y=False) if args.binary == True else DiceCELoss(softmax=True, to_onehot_y=True))
-	if args.cldice == True:
-		loss_function = soft_dice_cldice()
+	if args.metric == 'softdice':
+		loss_function = soft_dice_cldice(binary=True) if args.binary else soft_dice_cldice(binary=False)
 	else:
-		if args.binary == True:
+		if args.binary:
 			loss_function = DiceCELoss(sigmoid=True, to_onehot_y=False)
 		else:
 			loss_function = DiceCELoss(softmax=True, to_onehot_y=True)

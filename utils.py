@@ -8,11 +8,12 @@ import skimage.transform as skTrans
 import nibabel as nib
 import glob
 import statistics
+import sys
 
 import veela
 
-# from medpy.metric.binary import dc as DiceMetric
-from monai.metrics import DiceMetric
+from medpy.metric.binary import dc as DiceMetric_bin, hd as HausdorffDistanceMetric_bin, asd as SurfaceDistanceMetric_bin
+from monai.metrics import DiceMetric, HausdorffDistanceMetric, SurfaceDistanceMetric
 from tqdm import tqdm
 from pathlib import Path
 from monai.config import PathLike
@@ -21,10 +22,14 @@ from typing import Dict, List
 from monai.data import decollate_batch
 from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 
+# Add topology functions
+sys.path.insert(0,os.path.join('/home2/alberto/code', 'clDice')) # Modify topology path
+from clDice.cldice_metric.cldice import clDice as clDice_metric
+
 post_trans = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
 post_label = Compose([EnsureType(), AsDiscrete(to_onehot=3)])
-post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=3)])
+post_pred = Compose([EnsureType(), Activations(softmax=True), AsDiscrete(argmax=True, to_onehot=3)])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -300,11 +305,52 @@ def get_list_of_pos(json_dict, info_dict, key):
 
 	return idxlist
 
+def decollate_batch_list(prob ,test_labels):
+
+	test_labels_list = decollate_batch(test_labels)
+	test_labels = [
+		post_label(test_label_tensor) for test_label_tensor in test_labels_list
+	] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)
+	test_outputs_list = decollate_batch(prob)
+	prediction = [
+		post_pred(test_pred_tensor) for test_pred_tensor in test_outputs_list
+	] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)
+
+	return prediction, test_labels
+
+def compute_metric_binary(y_pred, y, args):
+
+	if args.metric == 'haus':
+		# metric_bin = HausdorffDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric = HausdorffDistanceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
+	elif args.metric == 'surfdist':
+		# metric_bin = SurfaceDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric = SurfaceDistanceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
+	elif args.metric == 'dice':
+		# metric_bin = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric = DiceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
+
+	return metric
+
 def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
 	create_dir(output_route, remove_folder=True)
-	dices = list()
-	dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+	# dices = list()
+	metrics_test, metrics_test_p, metrics_test_h = list(),list(), list()
+	cld_metric, cld_metric_p, cld_metric_h = list(), list(), list()
+
+	if args.metric == 'haus':
+		# metric_bin = HausdorffDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric_multi = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
+	elif args.metric == 'surfdist':
+		# metric_bin = SurfaceDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric_multi = SurfaceDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
+	elif args.metric == 'dice':
+		# metric_bin = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		metric_multi = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
+	else: # Cldice case
+		metric = None
+	# dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 	idxlist = get_list_of_pos(json_dict, info_dict, 'Image name')
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
 	model.eval()
@@ -313,45 +359,91 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 		for test_data in test_loader:
 			test_inputs, test_labels = test_data["image"].to(device), test_data["label"].to(device)
 			prediction = model(test_inputs)
+			prob = sliding_window_inference(test_inputs, args.input_size, 4, model) # torch.Size([2, 3, 224, 224, 128])
 
-			if not args.binary:
-				prob = sliding_window_inference(test_inputs, args.input_size, 4, model)
-				test_labels_list = decollate_batch(test_labels)
+
+			if args.binary:
+				prediction = [post_trans(i) for i in decollate_batch(prob)] # List of B (batch_size) elements, each is a tensor of (channels, H,W,D)
+				if args.metric == 'softdice':
+					for output, label in zip(prediction, test_labels):
+						clD = clDice_metric(output.squeeze().cpu().numpy().astype(bool), label.squeeze().cpu().numpy().astype(bool))
+						cld_metric.append(clD)
+					metric_test = np.mean(cld_metric)
+				else:
+					"""metric_bin(y_pred=prediction, y=test_labels)
+					metric_test = metric_bin.aggregate().item()"""
+					metric_test = compute_metric_binary(torch.stack(prediction).squeeze(), test_labels.squeeze(), args)
+					
+
+			else:
+				
+				# Both portal and hepatic (include backgroun False)
+				# prediction_b, test_labels_b = decollate_batch_list(prob[:,1:,:,:,:], test_labels)
+				prediction, test_labels_ = decollate_batch_list(prob, test_labels)
+				# Portal only
+				prediction_p, test_labels_p = decollate_batch_list(prob[:,1,:,:,:].unsqueeze(dim=1), test_labels)
+				# Hepatic only
+				prediction_h, test_labels_h = decollate_batch_list(prob[:,2,:,:,:].unsqueeze(dim=1), test_labels)
+				
+
+				"""test_labels_list = decollate_batch(test_labels)
 				test_labels = [
 					post_label(test_label_tensor) for test_label_tensor in test_labels_list
-				]
+				] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)
 				test_outputs_list = decollate_batch(prob)
 				prediction = [
 					post_pred(test_pred_tensor) for test_pred_tensor in test_outputs_list
-				]
+				] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)"""
 
-				""" # METODO DE LOS TUTORIALES USANDO SLIDING WINDOW INFERENCE
-				prob = sliding_window_inference(test_inputs, args.input_size, 4, model)
-				prediction = torch.argmax(prob, dim = 1)
-				prediction = prediction.unsqueeze(dim = 1)"""
-				""" # METODO DE PIERRE-HENRI
-				prob = torch.softmax(prediction, dim = 1)
-				prediction = torch.argmax(prob, dim = 1)
-				prediction = prediction.unsqueeze(dim = 1)"""
+				if args.metric == 'softdice':
+					for output, label in zip(prediction, test_labels_):
+						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						cld_metric.append(clD)
+					metric_test = np.mean(cld_metric)
 
-				
-			else:
-				prediction = post_trans(decollate_batch(prediction)) # Comprobar np.unique(prediction)
+					for output, label in zip(prediction_p, test_labels_p):
+						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						cld_metric_p.append(clD)
+					metric_test_p = np.mean(cld_metric_p)
 
-			for input, mask in zip(prediction, test_labels):
+					for output, label in zip(prediction_h, test_labels_h):
+						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+						cld_metric_h.append(clD)
+					metric_test_h = np.mean(cld_metric_h)
 
-				dice_metric(y_pred=input, y=mask) 
-				dice = 100 * dice_metric.aggregate().item()
-				print("Dice score: {} %".format(dice))
-				dices.append(dice)
+				else: # Comprobar uniques para hepatic
+					metric_multi(y_pred=prediction, y=test_labels_)
+					metric_test = metric_multi.aggregate().item()
 
+					"""metric_bin(y_pred=prediction_p, y=test_labels_p)
+					metric_test_p = metric_bin.aggregate().item()
+
+					metric_bin(y_pred=prediction_h, y=test_labels_h)
+					metric_test_h = metric_bin.aggregate().item()"""
+
+					metric_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], args)
+					metric_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], args)
+
+				metrics_test_p.append(metric_test_p)
+				metrics_test_h.append(metric_test_h)
+
+			metrics_test.append(metric_test)
+			
+
+			# SAVE SEGMENTATIONS
+			for input in prediction:
 				pos = idxlist[0]
+
 				if args.binary:
-					prediction = input.squeeze().cpu().numpy().astype(np.float32)
+					input = input.squeeze().cpu().numpy().astype(np.float32)
 				else:
-					prediction = input.squeeze().cpu().numpy().argmax(axis = 0).astype(np.float32)
+					input = input.squeeze().cpu().numpy().argmax(axis = 0).astype(np.float32)
+
 				# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CASUED BY RESIZING
-				unresized_result = veela.resize(prediction, info_dict, pos)
+				unresized_result = veela.resize(input, info_dict, pos)
 				
 				if not args.binary: # "BINARIZATION" FOR MULTICLASS
 					unresized_result = np.round(unresized_result)
@@ -366,114 +458,38 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 				output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
 				if not args.binary:
 					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
+					
+					# For better comparison
+					portal = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
+					hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
+					gt = nib.Nifti1Image(veela.binarize(portal,1) + veela.binarize(hepatic,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+					nib.save(gt, output_route + '/' + info_dict['Image name'][pos] + '_gt_join.nii.gz')
 				else:
 					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
 				idxlist.pop(0)
-		dice_metric.reset()
-			
-
-	with open('./dices.txt', 'w') as f:
-		f.write('Mean: {}\nStd: {}\n'.format(np.mean(dices), statistics.stdev(dices)))
-		##############################################################################################################
-		"""if not args.binary:
-			prob = torch.softmax(prediction, dim = 1)
-			pred = torch.argmax(prob, dim = 1)
-			pred_mask = pred.squeeze().cpu().numpy().astype(np.float32)
-			gt_mask = test_labels.squeeze().unsqueeze(dim = 0)
-			pos = idxlist[0]
-
-			dice_metric(y_pred=pred, y=gt_mask) 
-			dice = 100 * dice_metric.aggregate().item()
-			print("Dice score: {} %".format(dice))
-			dices.append(dice)
-
-			unresized_prediction = np.round(veela.resize(pred_mask, info_dict, pos)) # Check np.unique(unresized_prediction) HERE
-
-			result = veela.index_liver_in_volume(unresized_prediction, info_dict, pos)
-
-			output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-			nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')"""
-
-		
 
 
 
-
-
-
-		#####################################################################################################################
-		"""test_inputs, test_labels = test_data["image"].to(device), test_data["label"].to(device)
-		pred = model(test_inputs)
-		pred = post_trans(decollate_batch(pred)) # Length of pred accordingly to batchsize
-		
-		for result in pred:
-
-			# NETWORK OUTPUT
-			result = result.squeeze().cpu().numpy()
-			pos = idxlist[0]
-			if not args.binary:
-
-				# NETWORK OUTPUT 
-				portal = result[1,:,:,:]
-				hepatic = result[2,:,:,:]
-
-				# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CAUSED BY RESIZING
-				unresized_portal = veela.resize(portal, info_dict, pos)
-				unresized_hepatic = veela.resize(hepatic, info_dict, pos)
-
-				unresized_portal = veela.binarize(unresized_portal,1)
-				unresized_hepatic = veela.binarize(unresized_hepatic,2)
-
-				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
-				result_portal = veela.index_liver_in_volume(unresized_portal, info_dict, pos)
-				result_hepatic = veela.index_liver_in_volume(unresized_hepatic, info_dict, pos)
-
-				# NUMPY 2 NIFTI
-				output_portal = nib.Nifti1Image(result_portal, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-				output_hepatic = nib.Nifti1Image(result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-				output_multi = nib.Nifti1Image(result_portal + result_hepatic, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-				portal_gt = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
-				hepatic_gt = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
-				gt_multi = nib.Nifti1Image(veela.binarize(portal_gt,1) + veela.binarize(hepatic_gt,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-				# DICE METRIC COMPUTATION ON TEST LOADER
-				dice_portal = 100.*DiceMetric(result_portal.astype(np.bool), portal_gt.astype(np.bool))
-				dice_hepatic = 100.*DiceMetric(result_hepatic.astype(np.bool), hepatic_gt.astype(np.bool))
-				dices_portal.append(dice_portal)
-				dices_hepatic.append(dice_hepatic)
-				print('Dice metric for portal veins: {} %\nDice metric for hepatic veins: {} %\n'.format(dice_portal, dice_hepatic))
-
-				nib.save(output_portal, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
-				nib.save(output_hepatic, output_route + '/' + info_dict['Image name'][pos] + '_hep_segmented.nii.gz')
-				nib.save(outpidxlist.pop(0)ult = veela.resize(result, info_dict, pos)
-				unresized_result = veela.binarize(unresized_result)
-
-				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
-				result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
-
-				# NUMPY 2 NIFTI
-				output_ima = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-
-				groundtruth = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
-				# Compute dice metric
-				dice = 100.*DiceMetric(result.astype(np.bool), groundtruth.astype(np.bool))
-				dices_portal.append(dice)
-				print('Dice metric: {} %'.format(dice))
-
-				nib.save(output_ima, output_route + '/' + info_dict['Image name'][pos] + '_segmented.nii.gz')"""
-			# idxlist.pop(0)
-	
-
-	"""with open('./dices.txt', 'w') as f:
-		if args.binary:
-			f.write('Mean: {}\nStd: {}\n'.format(np.mean(dices_portal), statistics.stdev(dices_portal)))
+		if args.metric != 'softdice':
+			metric_multi.reset()
 		else:
+			cld_metric = list()
+
+			
+	if args.binary:
+		with open('./metrics.txt', 'w') as f:
+			f.write('Mean: {}\nStd: {}\n'.format(np.mean(metrics_test), statistics.stdev(metrics_test)))
+	else:
+		with open('./metrics.txt', 'w') as f:
 			f.write('Portal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\n'.format(
-				np.mean(dices_portal), statistics.stdev(dices_portal),
-				np.mean(dices_hepatic), statistics.stdev(dices_hepatic),
-				np.mean(dices_portal+dices_hepatic), statistics.stdev(dices_portal + dices_hepatic)
-			))"""
+				np.mean(metrics_test_p), statistics.stdev(metrics_test_p),
+				np.mean(metrics_test_h), statistics.stdev(metrics_test_h),
+				np.mean(metrics_test), statistics.stdev(metrics_test)
+			))
+
+
+	"""with open('./metrics.txt', 'w') as f:
+		f.write('Mean: {}\nStd: {}\n'.format(np.mean(metrics_test), statistics.stdev(metrics_test)))"""
 
 
 def load_veela_datalist(data_list_file_path: PathLike, data_list_key: str = "training") -> List[Dict]:
