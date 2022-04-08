@@ -25,17 +25,6 @@ class C_loss(nn.Module):
 	def forward(self, y_pred, y_true, vessel):
 		y_pred = self.relu(y_pred)
 
-		## 1. Remove conflict voxels during computation
-		# interesting_pos = torch.logical_not(torch.logical_or(torch.round(vessel) == 0, (y_true == 0)*(torch.round(vessel) == 1)))
-		# C_loss = torch.sum(torch.multiply(1/(torch.pow(y_true[interesting_pos],2)), torch.multiply(torch.round(vessel[interesting_pos]), self.smoothl1(y_pred[interesting_pos], y_true[interesting_pos]))))
-		# C_loss /= torch.count_nonzero(vessel[interesting_pos])
-
-		## 2. Add epsilon term
-		### skeleton_positions = torch.mul( (y_true == 0),(torch.round(vessel) == 1) )
-		### y_true[torch.mul((y_true == 0),(vessel == 1))] = self.epsilon
-		# y_true[y_true == 0] = self.epsilon # ASSIGN TO BACKGROUND VOXELS INF DISTANCE -> 0 WEIGHT
-		# C_loss = torch.sum( torch.multiply( 1/(torch.pow(y_true,2) + self.epsilon), self.smoothl1(y_pred, y_true) )) / torch.count_nonzero(vessel)
-
 		## 3. Como dijo Pierre, de añadir 1. 
 		y_true = y_true + 1
 		y_pred = y_pred + 1
