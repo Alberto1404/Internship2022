@@ -37,8 +37,8 @@ class C_loss(nn.Module):
 		# C_loss = torch.sum( torch.multiply( 1/(torch.pow(y_true,2) + self.epsilon), self.smoothl1(y_pred, y_true) )) / torch.count_nonzero(vessel)
 
 		## 3. Como dijo Pierre, de añadir 1. 
-		y_true = y_true + 0.1
-		y_pred = y_pred + 0.1
+		y_true = y_true + 1
+		y_pred = y_pred + 1
 		C_loss = torch.sum(torch.multiply(1/(torch.pow(y_true,2)), torch.multiply(torch.round(vessel), self.smoothl1(y_pred, y_true))))
 		C_loss /= torch.count_nonzero(vessel)
 
