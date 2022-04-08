@@ -112,8 +112,7 @@ def validation(model, val_loader, metric, criterion_vessel, criterion_dmap, post
 				loss_vessels.append(loss_1.item())
 				loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
 				loss_dmaps.append(loss_2.item())
-				# loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
-				loss = loss_1 + args.alpha * loss_2
+				loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
 
 			loss_vals.append(loss.item())
 
