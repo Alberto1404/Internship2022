@@ -26,11 +26,9 @@ class C_loss(nn.Module):
 		y_pred = self.relu(y_pred)
 
 		## 3. Como dijo Pierre, de añadir 1. 
-		y_true = y_true + 1
-		y_pred = y_pred + 1
-		C_loss = torch.sum(torch.multiply(1/(torch.pow(y_true,2)), torch.multiply(torch.round(vessel), self.smoothl1(y_pred, y_true))))
-		C_loss /= torch.count_nonzero(vessel)
 
+		C_loss = torch.multiply( 1/torch.pow(y_true,2) , self.smoothl1(y_pred, y_true) ).where( vessel == 1, torch.tensor(0.0).to('cuda') )
+		C_loss = torch.sum(C_loss) / torch.count_nonzero(vessel)
 
 		return C_loss
 
