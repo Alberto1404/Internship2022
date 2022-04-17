@@ -1,4 +1,3 @@
-from turtle import forward
 from unetr_topnet import UNETR_topnet
 from monai.losses import DiceCELoss
 
