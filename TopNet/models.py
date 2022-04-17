@@ -15,7 +15,7 @@ from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
 class C_loss(nn.Module):
 
-	def __init__(self, beta = 1, epsilon = 1e-1):
+	def __init__(self, beta = 1):
 		super(C_loss, self).__init__()
 		self.beta = beta
 		self.epsilon = epsilon
@@ -24,11 +24,7 @@ class C_loss(nn.Module):
 
 	def forward(self, y_pred, y_true, vessel):
 		y_pred = self.relu(y_pred)
-
-		## 3. Como dijo Pierre, de añadir 1. 
-
-		return torch.sum(torch.multiply( 1/torch.pow(y_true,2) , self.smoothl1(y_pred, y_true) ).where( vessel == 1, torch.tensor(0.0).to('cuda') ) ) / torch.count_nonzero(vessel)
-
+		return torch.sum(torch.multiply((1/torch.pow(y_true,2)).where( vessel > 0.5, torch.tensor(0.0).to('cuda')), self.smoothl1(y_pred, y_true))) / torch.count_nonzero(vessel)
 
 def get_model_loss(args):
 
