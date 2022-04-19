@@ -22,6 +22,12 @@ class C_loss(nn.Module):
 
 	def forward(self, y_pred, y_true, vessel):
 		y_pred = self.relu(y_pred)
+		
+		C_loss = torch.multiply(1/torch.pow(y_true,2),self.smoothl1(self.relu(y_pred), y_true)).where( vessel == 1, torch.tensor(0.0).to("cuda" if torch.cuda.is_available() else "cpu"))
+		C_loss = torch.sum(C_loss) / torch.count_nonzero(vessel)
+		return C_loss
+		
+		
 		return torch.sum(torch.multiply((1/torch.pow(y_true,2)).where( vessel > 0.5, torch.tensor(0.0).to('cuda')), self.smoothl1(y_pred, y_true))) / torch.count_nonzero(vessel)
 
 def get_model_loss(args):
