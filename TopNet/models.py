@@ -17,7 +17,6 @@ class C_loss(nn.Module):
 	def __init__(self, beta = 1):
 		super(C_loss, self).__init__()
 		self.beta = beta
-		self.epsilon = epsilon
 		self.smoothl1 = nn.SmoothL1Loss(beta = self.beta, reduction='none')
 		self.relu = nn.ReLU(inplace = True)
 
