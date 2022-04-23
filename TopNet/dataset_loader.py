@@ -6,18 +6,14 @@ from monai.data import(
 	DataLoader
 )
 from monai.transforms import (
-	AddChanneld,
 	EnsureChannelFirstd,
 	Compose,
 	LoadImaged,
-	MapTransform,
+	RandZoomd,
 	Orientationd,
 	RandFlipd,
 	RandRotated,
-	RandCropByPosNegLabeld,
-	RandShiftIntensityd,
 	NormalizeIntensityd,
-	RandRotate90d,
 	ToTensord,
 )
 from utils import load_veela_datalist
@@ -27,20 +23,9 @@ def transformations(size):
 	train_transforms = Compose(
 		[
 			LoadImaged(keys=["image", "vessel", "dmap"]),
-			# AddChanneld(keys=["image", "label"]),
 			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			# Convert2MultiChanneld(keys="label"),
 			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
-			# RandCropByPosNegLabeld(
-			# 	keys=["image", "label"],
-			# 	label_key="label",
-			# 	spatial_size=size,
-			# 	pos=1,
-			# 	neg=1,
-			# 	num_samples=4,
-			# 	image_key="image",
-			# 	image_threshold=0,
-			# ),
+			RandZoomd(keys=["image", "vessel", "dmap"], min_zoom=1.1, max_zoom=2, prob = 0.3),
 			RandFlipd(
 				keys=["image", "vessel", "dmap"],
 				spatial_axis=[0],
@@ -70,9 +55,7 @@ def transformations(size):
 	val_transforms = Compose(
 		[
 			LoadImaged(keys=["image", "vessel", "dmap"]),
-			# AddChanneld(keys=["image", "label"]),
 			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			# Convert2MultiChanneld(keys="label"),
 			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			ToTensord(keys=["image", "vessel", "dmap"]),
@@ -82,9 +65,7 @@ def transformations(size):
 	test_transforms = Compose(
 		[
 			LoadImaged(keys=["image", "vessel", "dmap"]),
-			# AddChanneld(keys=["image", "label"]),
 			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			# Convert2MultiChanneld(keys="label"),
 			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
 			ToTensord(keys=["image", "vessel", "dmap"]),
@@ -95,7 +76,6 @@ def transformations(size):
 
 def get_loaders(args, json_routes):
 
-	# datasets = json_routes[0]
 	datasets = json_routes
 
 	datalist = load_veela_datalist(datasets, "training")

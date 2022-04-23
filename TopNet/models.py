@@ -5,30 +5,31 @@ import sys
 import os
 import numpy as np
 import torch
-import torch.nn as nn
-from torch.nn import SmoothL1Loss
+from torch.nn import SmoothL1Loss, ReLU, Module
 
 # Add topology functions
 sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice')) # Modify topology path
 from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
-class C_loss(nn.Module):
+class C_loss (Module):
 
 	def __init__(self, beta = 1):
 		super(C_loss, self).__init__()
 		self.beta = beta
-		self.smoothl1 = nn.SmoothL1Loss(beta = self.beta, reduction='none')
-		self.relu = nn.ReLU(inplace = True)
+		self.smoothl1 = SmoothL1Loss(beta = self.beta, reduction='none')
+		self.relu = ReLU(inplace = True)
 
 	def forward(self, y_pred, y_true, vessel):
 		y_pred = self.relu(y_pred)
-		
-		C_loss = torch.multiply(1/torch.pow(y_true,2),self.smoothl1(self.relu(y_pred), y_true)).where( vessel == 1, torch.tensor(0.0).to("cuda" if torch.cuda.is_available() else "cpu"))
+
+		C_loss = torch.multiply(
+								(1/torch.pow(y_true,2)).where( vessel > 0.5, torch.tensor(0.0).to('cuda') ),
+								self.smoothl1(y_pred, y_true)
+								)
 		C_loss = torch.sum(C_loss) / torch.count_nonzero(vessel)
+
 		return C_loss
-		
-		
-		return torch.sum(torch.multiply((1/torch.pow(y_true,2)).where( vessel > 0.5, torch.tensor(0.0).to('cuda')), self.smoothl1(y_pred, y_true))) / torch.count_nonzero(vessel)
+
 
 def get_model_loss(args):
 

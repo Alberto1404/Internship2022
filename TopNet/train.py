@@ -1,3 +1,4 @@
+from secrets import choice
 import torch
 import argparse
 import os
@@ -16,6 +17,7 @@ import models
 # Module imports
 from tqdm import tqdm
 from monai.metrics import DiceMetric, HausdorffDistanceMetric, SurfaceDistanceMetric
+from scipy.io import savemat
 
 # Add topology functions
 sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice')) # Modify topology path
@@ -52,14 +54,15 @@ def get_epoch_iterator(args):
 
 		loss = 'DiceCELoss'
 
-	return tqdm(range(1,args.epochs + 1), desc = 'Epoch X | X (Training '+ loss +': X) (Validation '+ loss + ': X) (Validation '+ metric + ': X)', dynamic_ncols=True), loss, metric
+	return tqdm(range(1,args.epochs + 1), desc = 'Epoch X | X (Training loss: X) (Validation loss: X) (Validation '+ metric + ': X)', dynamic_ncols=True), loss, metric
 
-def validation(model, val_loader, metric, criterion_vessel, criterion_dmap, post_trans, args):
+def validation(model, val_loader, metric, criterions, post_trans, args):
 
-	metric_vals = list()
-	loss_vals = list()
-	loss_vessels, loss_dmaps = list(), list()
+	criterion_vessel = criterions[0]
+	criterion_dmap = criterions[1]
+	dice_vals, haus_vals, avg_vals, cldice_vals = list(), list(), list(), list()
 	cld_metric = list()
+	loss_vals, loss_vessels, loss_dmaps = list(), list(), list()
 
 	model.eval()
 	with torch.no_grad():
@@ -70,69 +73,73 @@ def validation(model, val_loader, metric, criterion_vessel, criterion_dmap, post
 
 			if args.binary:
 				val_output_vessels = [post_trans(i) for i in decollate_batch(val_output_vessels_)]
+
+				metric[0](y_pred=val_output_vessels, y=val_vessel_masks)
+				dice_val = metric[0].aggregate().item()
+				metric[1](y_pred=val_output_vessels, y=val_vessel_masks)
+				haus_val = metric[1].aggregate().item()
+				metric[2](y_pred=val_output_vessels, y=val_vessel_masks)
+				avg_val = metric[2].aggregate().item()
+				for output, label in zip(val_output_vessels, val_vessel_masks):
+					clD = clDice_metric(output.squeeze().cpu().numpy().astype(bool), label.squeeze().cpu().numpy().astype(bool))
+					cld_metric.append(clD)
+				metric_val = np.mean(cld_metric)
 				
-				if args.metric == 'softdice':
-					for output, label in zip(val_outputs, val_labels):
-						clD = clDice_metric(output.squeeze().cpu().numpy().astype(bool), label.squeeze().cpu().numpy().astype(bool))
-						cld_metric.append(clD)
-					metric_val = np.mean(cld_metric)
-				else:
-					metric(y_pred=val_output_vessels, y=val_vessel_masks)
-					metric_val = metric.aggregate().item()
 
 			else:
-				"""val_labels_list = decollate_batch(val_labels)
-				val_labels_convert = [
-					post_label(val_label_tensor) for val_label_tensor in val_labels_list
-				]
-				val_outputs_list = decollate_batch(val_outputs_)
-				val_output_convert = [
-					post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list
-				]"""
-				val_output_convert, val_labels_convert = utils.decollate_batch_list(val_outputs_, val_labels)
-
-				if args.metric == 'softdice':
-					for output, label in zip(val_output_convert, val_labels_convert):
-						clD = clDice_metric(output.squeeze().argmax(dim =0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						cld_metric.append(clD)
-					metric_val = np.mean(cld_metric)				
-				else:
-					metric(y_pred=val_output_convert, y=val_labels_convert)
-					metric_val = metric.aggregate().item()
 				
-			metric_vals.append(metric_val)
+				val_output_convert, val_labels_convert = utils.decollate_batch_list(val_output_vessels_, val_vessel_masks)
 
-			if args.metric == 'softdice':
-				loss = loss_function(val_labels, val_outputs_)
-				# loss_vals.append(loss)
-			else:
-				loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
-				loss_vessels.append(loss_1.item())
-				loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
-				loss_dmaps.append(loss_2.item())
+				metric[0](y_pred=val_output_convert, y=val_labels_convert)
+				dice_val = metric[0].aggregate().item()
+				metric[1](y_pred=val_output_convert, y=val_labels_convert)
+				haus_val = metric[1].aggregate().item()
+				metric[2](y_pred=val_output_convert, y=val_labels_convert)
+				avg_val = metric[2].aggregate().item()
+				for output, label in zip(val_output_convert, val_labels_convert):
+					clD = clDice_metric(output.squeeze().argmax(dim =0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					cld_metric.append(clD)
+				metric_val = np.mean(cld_metric)	
+
+
 				
-				loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
+			dice_vals.append(dice_val)
+			haus_vals.append(haus_val)
+			avg_vals.append(avg_val)
+			cldice_vals.append(metric_val)
+
+			loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
+			loss_vessels.append(loss_1.item())
+			loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
+			loss_dmaps.append(loss_2.item())
+			# loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
+			loss = loss_1 + args.alpha * loss_2
 
 			loss_vals.append(loss.item())
 
-		if args.metric != 'softdice':
-			metric.reset()
-		else:
+			[x.reset() for x in metric]
+			# metric[0].reset()
+			# metric[1].reset()
+			# metric[2].reset()
 			cld_metric = list()
-	mean_metric_vals = np.mean(metric_vals)
+
+	mean_dice_vals = np.mean(dice_vals)
+	mean_haus_vals = np.mean(haus_vals)
+	mean_avg_vals = np.mean(avg_vals)
+	mean_cldice_vals = np.mean(cldice_vals)
 	mean_loss_val = np.mean(loss_vals)
 	mean_loss_1 = np.mean(loss_vessels)
 	mean_loss_2 = np.mean(loss_dmaps)
 	# print('\n\tValidation dice: {}\tValidation loss: {}'.format(mean_dice_val, mean_loss_val))
 
-	return mean_metric_vals, mean_loss_val, mean_loss_1, mean_loss_2
+	return [mean_dice_vals, mean_haus_vals, mean_avg_vals, mean_cldice_vals], [mean_loss_val, mean_loss_1, mean_loss_2]
 
 
-def train(model, train_loader, val_loader, optimizer, metric, losses, loss_list_tr, loss_list_tr_vessel, loss_list_tr_dmap, loss_vessel_val, loss_dmap_val, loss_list_ts, metric_list, args):
-	dice_val_best = 0.0
-	criterion_vessel = losses[0]
-	criterion_dmap = losses[1]
+def train(model, train_loader, val_loader, optimizer, metric, criterions, lossses_list_tr, lossses_list_val, metric_list, fold, args):
+	dice_val_best = -1
+	best_epoch = -1
+	criterion_vessel = criterions[0]
+	criterion_dmap = criterions[1]
 
 	# epoch_iterator = tqdm(range(1,args.epochs + 1), desc = 'Epoch X | X (Training loss: X) (Validation loss: X) (Validation metric: X)', dynamic_ncols=True)
 	epoch_iterator, loss_type, metric_type = get_epoch_iterator(args)
@@ -148,16 +155,11 @@ def train(model, train_loader, val_loader, optimizer, metric, losses, loss_list_
 			inputs, vessel_masks, dmap_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device))
 			optimizer.zero_grad()
 			output_vessels, output_dmap = model(inputs)
-			# loss = loss_function(outputs, labels)
-			if args.metric == 'softdice': 
-				# ClDice requires the Ground-Truth first
-				# loss = loss_function(labels, outputs)
-				print("TIENES QUE MODIFICAR ESTO")
-			else:
-				loss_1 = criterion_vessel(output_vessels, vessel_masks)
-				loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
+			
+			loss_1 = criterion_vessel(output_vessels, vessel_masks)
+			loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
 
-				loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
+			loss = loss_1 + args.alpha * loss_2
 
 			loss.backward()
 			optimizer.step()
@@ -169,48 +171,38 @@ def train(model, train_loader, val_loader, optimizer, metric, losses, loss_list_
 		vessel_loss /= step
 		dmap_loss /= step
 
-		loss_list_tr.append(epoch_loss)
-		loss_list_tr_vessel.append(vessel_loss)
-		loss_list_tr_dmap.append(dmap_loss)
+		lossses_list_tr[0].append(epoch_loss)
+		lossses_list_tr[1].append(vessel_loss)
+		lossses_list_tr[2].append(dmap_loss)
 
 		if (epoch  % eval_num == 0):
-			dice_val , loss_val, loss_val_1,loss_val_2 = validation(model, val_loader, metric, criterion_vessel, criterion_dmap, post_trans, args)
+			metrics_val , losses_val = validation(model, val_loader, metric, [criterion_vessel, criterion_dmap], post_trans, args)
 			# loss_list.append(epoch_loss)
-			metric_list.append(dice_val)
-			loss_list_ts.append(loss_val)
-			loss_vessel_val.append(loss_val_1)
-			loss_dmap_val.append(loss_val_2)
+			metric_list[0].append(metrics_val[0])
+			metric_list[1].append(metrics_val[1])
+			metric_list[2].append(metrics_val[2])
+			metric_list[3].append(metrics_val[3])
+			lossses_list_val[0].append(losses_val[0])
+			lossses_list_val[1].append(losses_val[1])
+			lossses_list_val[2].append(losses_val[2])
 
 
-			epoch_iterator.set_description('Epoch %d | %d (Training %s: %4f) (Validation %s: %4f) (Validation %s: %4f)' % (epoch,
+			epoch_iterator.set_description('Epoch %d | %d (Training loss: %4f) (Validation loss: %4f) (Validation metric: %4f)' % (epoch,
 																														   args.epochs,
-																														   loss_type,
 																														   epoch_loss, 
-																														   loss_type,
-																														   loss_val,
-																														   metric_type,
-																														   dice_val))
-			if dice_val > dice_val_best:
-				# best_before = dice_val_best
-				# dice_val_best = dice_val
-				utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights'), remove_folder=True)
+																														   losses_val[0],
+																														   metrics_val[0]))
+			if metrics_val[0] > dice_val_best:
+				best_epoch = epoch
+				dice_val_best = metrics_val[0]
+
+				utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights', 'fold_'+str(fold)), remove_folder=True)
 				torch.save(
 					# model.state_dict(), os.path.join(os.path.join(os.path.abspath(os.getcwd()), 'weights'), "best_metric_model.pth")
-					model.state_dict(), os.path.join(current_path,'weights',"best_metric_model.pth")
+					model.state_dict(), os.path.join(current_path,'weights', 'fold_'+str(fold),"best_metric_model.pth")
 				)
-				"""print(
-					"Model Was Saved ! Current Best Avg. Dice: {} Current Avg. Dice: {}".format(
-						dice_val_best, best_before
-					)
-				)
-			else:
-				print(
-					"Model Was Not Saved ! Current Best Avg. Dice: {} Current Avg. Dice: {}".format(
-						dice_val_best, best_before
-					)
-				)"""
 		
-	return loss_list_tr, metric_list, loss_list_ts, [loss_list_tr_vessel, loss_list_tr_dmap], [loss_vessel_val, loss_dmap_val]
+	return lossses_list_tr, metric_list, lossses_list_val, best_epoch
 
 
 def main(args):
@@ -238,63 +230,104 @@ def main(args):
 	utils.split_dataset(info_dict, reshaped_liver_dir, args)
 
 	# json_routes, dictionary_list = utils.create_json_file(reshaped_liver_dir, info_dict, args)
-	json_routes = os.path.join(reshaped_liver_dir,'VEELA_0.json')
-	dictionary_list = utils.json2dict(json_routes)
-
-	print('Creating loaders...\n')
-	train_loader, val_loader, test_loader = dataset_loader.get_loaders(args, json_routes)
-
-
-	# CREATE MODEL, LOSS, OPTIMIZER
-	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	print('Creating model...\n')
-	model, loss_function_vessel, loss_function_dmap = models.get_model_loss(args)
-	model.to(device)
-
-	torch.backends.cudnn.benchmark = True
-	optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-
-	# EXECUTE A TYPICAL PYTORCH TRAINING PROCESS
-	"""if not args.cldice:
-		dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+	if args.binary:
+		json_routes = [os.path.join('/home/guijosa/Documents/PythonDocs/TopNet/clDice','binary',args.vessel,'VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
 	else:
-		dice_metric = None"""
-	if args.metric == 'haus':
-		metric = HausdorffDistanceMetric(include_background=True if args.binary else False)
-	elif args.metric == 'surfdist':
-		metric = SurfaceDistanceMetric(include_background=True if args.binary else False)
-	elif args.metric == 'dice':
-		metric = DiceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False)
-	else: # Cldice case, cldice metric is not instantiable object to further call
-		metric = None
-		# DiceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False)
-	loss_list_tr, loss_list_ts, metric_list = list(), list(), list()
+		json_routes = [os.path.join('/home/guijosa/Documents/PythonDocs/TopNet/clDice','multi','VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
+	dictionary_list = [utils.json2dict(json_routes[i]) for i in range(args.k)] # KFCV given splits
+
+	my_metrics = [DiceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
+				  HausdorffDistanceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
+				  SurfaceDistanceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False)]
+	loss_list_tr, loss_list_ts, dice_list, haus_list, surface_list, cldice_list = list(), list(), list(), list(), list(), list()
+	metric_list = list()
+	metric_list.append(dice_list)
+	metric_list.append(haus_list)
+	metric_list.append(surface_list)
+	metric_list.append(cldice_list)
+	mean_folds, std_folds = list(), list()
 	loss_vessel_tr, loss_dmap_tr,loss_vessel_val, loss_dmap_val = list(), list(), list(), list()
 
-	loss_list_tr, metric_list, loss_list_ts, losses_1_2_train, losses_1_2_val = train(
-		model,
-		train_loader,
-		val_loader,
-		optimizer,
-		metric,
-		[loss_function_vessel, loss_function_dmap],
-		loss_list_tr,
-		loss_vessel_tr, 
-		loss_dmap_tr,
-		loss_vessel_val,
-		loss_dmap_val,
-		loss_list_ts,
-		metric_list,
-		args
-	)
-	
-	# SAVE ACCURACY / LOSS PLOTS
-	# plots.save_loss_metric(loss_list_tr, metric_list, loss_list_ts, args) # ANTES ESTABA ASI
-	plots.save_loss_metric(loss_list_tr, metric_list, loss_list_ts, losses_1_2_train, losses_1_2_val, args)
 
-	# SAVE SEGMENTATIONS
-	# utils.pipeline_2(model,os.path.join(current_path, 'weights'), dictionary_list[0], info_dict, args.dataset_path, test_loader, args.batch)
-	utils.pipeline_2(model,os.path.join(current_path, 'weights'), dictionary_list, info_dict, test_loader, args)
+	if not args.binary:
+		mean_portal_folds, std_portal_folds, mean_hepatic_folds, std_hepatic_folds =  list(), list(), list(), list()
+
+	utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights'), remove_folder=False)
+	metrics_all = np.zeros((args.k, 10, args.epochs)) # Variable to save all the KFCV metrics
+
+	for fold, (json_route, dictionary_) in enumerate( zip(json_routes, dictionary_list) ):
+		print('Creating loaders fold {}...\n'.format(fold+1))
+		train_loader, val_loader, test_loader = dataset_loader.get_loaders(args, json_route)
+
+		# CREATE MODEL, LOSS, OPTIMIZER
+		os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+		print('Creating model...\n')
+		model, loss_function_vessel, loss_function_dmap = models.get_model_loss(args)
+		model.to(device)
+
+		torch.backends.cudnn.benchmark = True
+		optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+		"""losses_tr, metric_list, losses_val, best_epoch = train(
+			model,
+			train_loader,
+			val_loader,
+			optimizer,
+			my_metrics,
+			[loss_function_vessel, loss_function_dmap],
+			[loss_list_tr,loss_vessel_tr, loss_dmap_tr],
+			[loss_list_ts, loss_vessel_val,loss_dmap_val],
+			metric_list,
+			fold,
+			args)
+
+
+		metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
+		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
+		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training C_loss
+		metrics_all[fold,3,:] = np.asarray(losses_val[0][-args.epochs:]) # Validation loss (DiceCELoss + lambda * C_loss)
+		metrics_all[fold,4,:] = np.asarray(losses_val[1][-args.epochs:]) # Validation DiceCELoss
+		metrics_all[fold,5,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation C_loss
+		metrics_all[fold,6,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
+		metrics_all[fold,7,:] = np.asarray(metric_list[1][-args.epochs:]) # Hausdorff distance metric
+		metrics_all[fold,8,:] = np.asarray(metric_list[2][-args.epochs:]) # Average Surface Distance
+		metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)"""
+
+		# SAVE METRIC / LOSS PLOTS
+		# plots.save_loss_metric(losses_tr[0][-args.epochs:], metric_list[0][-args.epochs:], losses_val[0][-args.epochs:], fold, best_epoch, args)
+
+		# INFERENCE ON TEST SET 
+		metrics = utils.pipeline_2(model,os.path.join(current_path, 'weights', 'fold_'+str(fold)), dictionary_, info_dict, test_loader, fold, args)
+		mean_folds.append(metrics[0])
+		std_folds.append(metrics[1])
+		if not args.binary:
+			mean_portal_folds.append(metrics[2])
+			std_portal_folds.append(metrics[3])
+			mean_hepatic_folds.append(metrics[4])
+			std_hepatic_folds.append(metrics[5])
+
+	with open('./metrics.txt', 'w') as f:
+		if args.binary:
+			f.write('Successfully performed K-fold Cross Validation with K = {}.\nBest prediction obtained in fold = {}\nKFCV-Mean dice: {}\nKFCV-Std dice: {}\n'.format(
+				args.k, 
+				np.argmax(mean_folds) + 1,
+				np.mean(mean_folds),
+				np.mean(std_folds)
+			))
+		else:
+			f.write('Successfully performed K-fold Cross Validation with K = {}.\nBest prediction obtained in fold = {}\nKFCV-Portal Mean: {}\nKFCV-Portal Std: {}\nKFCV-Hepatic Mean: {}\nKFCV-Hepatic Std: {}\nKFCV-Mean: {}\nKFCV-Std: {}\n'.format(
+				args.k, 
+				np.argmax(mean_folds) + 1,
+				np.mean(mean_portal_folds),
+				np.mean(std_portal_folds),
+				np.mean(mean_hepatic_folds),
+				np.mean(std_hepatic_folds),
+				np.mean(mean_folds),
+				np.mean(std_folds)
+			))
+
+	save_matrix = {'metrics_all': metrics_all, 'label': 'Variable that contains train_loss, val_loss and val_metric for all splits'}
+	savemat("metrics_all.mat", save_matrix)
+
 
 if __name__ == '__main__':
 
@@ -303,17 +336,17 @@ if __name__ == '__main__':
 
 	parser.add_argument('-dataset', required=False, type=str, default = 'VEELA') # Future: add choices
 	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
+	parser.add_argument('-vessel', required=False, type=str, default='portal', choices=('portal','hepatic'))
 	parser.add_argument('-dataset_path', required = False, type=str, default='/home/guijosa/Documents/PythonDocs/VEELA/dataset')
 	parser.add_argument('-input_size', required=False, nargs='+', type = int, default=[224,224,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
-	parser.add_argument('-epochs', required=False, type=int, help='Number of epochs', default=500)
+	parser.add_argument('-epochs', required=False, type=int, help='Number of epochs', default=2)
 	parser.add_argument('-lr', required=False, type = float, help='Define learning rate', default=1e-4)
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 5)
 
 	parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
-	parser.add_argument('-alpha', required=False, type=float, default=0.5, help='Weighting factor for loss functions. Value between 0 and 1. Alpha * DiceCELoss + (1-alpha) * C_loss')
-	# parser.add_argument('-cldice', required=False, type=str, default='False', choices=('False', 'True'))
+	parser.add_argument('-alpha', required=False, type=float, default=10, help='Weighting factor for C_loss.')
 	parser.add_argument('-metric', required=False, type=str, default='dice', choices=('dice', 'haus', 'surfdist', 'softdice'))
 
 	# UNETR
@@ -324,14 +357,12 @@ if __name__ == '__main__':
 	parser.add_argument('-pos_embed', required=False, type=str, default = 'perceptron', choices=('perceptron','conv'))
 	parser.add_argument('-norm_name', required=False, type=str, default = 'instance', choices=('batch','instance'))
 	parser.add_argument('-res_block', required=False, type=str, choices=('True','False'), default='True')
-	parser.add_argument('-dropout_rate', required=False, type=float, default = 0.0)
+	parser.add_argument('-dropout_rate', required=False, type=float, default = 0)
 	
 	args = parser.parse_args()
 
-	# if selected metric is softdice, cldice must be set to True
 	args.binary =  True if args.binary == 'True' else False
 	args.res_block = True if args.res_block == 'True' else False
-	# args.cldice = True if args.cldice == 'True' else False
 
 	args.input_size = tuple(args.input_size)
 	main(args)

@@ -5,6 +5,7 @@ import skimage.transform as skTrans
 from skimage.morphology import skeletonize_3d
 from skimage.util import img_as_float32
 from scipy.ndimage.morphology import distance_transform_edt as DTM
+from skimage.morphology import medial_axis
 
 from tqdm import tqdm
 
@@ -13,7 +14,8 @@ def compute_distance_map(volume):
 	volume[volume != 0] = 1 
 	
 	skel = img_as_float32(skeletonize_3d(volume))
-	return np.multiply(DTM(1-skel), volume)
+	return np.multiply( (DTM(1-skel) + 1), volume)
+
 
 def binarize(volume, value = 1):
 	volume[volume > 0.95] = value
@@ -48,7 +50,6 @@ def extract_liver(volume_image, info_dict, image_idx):
 			info_dict['Liver coordinates'][image_idx][4]:info_dict['Liver coordinates'][image_idx][5] + 1
 	]
 	return liver
-
 
 def get_liver_bounding_box(liver):
 
@@ -117,50 +118,50 @@ def pipeline_1(info_dict, dst_folder, args):
 		# NIFTI 2 NUMPY ND ARRAY
 		ima = nib.load(os.path.join(args.dataset_path, info_dict['Image name'][idx])).get_fdata()
 		ima_portal = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][idx])).get_fdata()# .astype(np.uint8)
-
+		ima_hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
+		
 		# 3D INDEXING
 		liver = extract_liver(ima, info_dict, idx)
 		liver_portal = extract_liver(ima_portal, info_dict, idx)
+		liver_hepatic = extract_liver(ima_hepatic, info_dict, idx)
 
 		# RESIZE INPUT AND LABEL (+ LABEL BINARIZATION)
-		resized_liver = skTrans.resize(liver, args.input_size, order = 1, preserve_range=True, anti_aliasing = True)
+		resized_liver = skTrans.resize(liver, args.input_size, order = 2, preserve_range=True, anti_aliasing = True)
+
 		resized_liver_portal = binarize(skTrans.resize(liver_portal, args.input_size, order = 0, preserve_range=True, anti_aliasing = True))
 		resized_liver_portal_dmap = compute_distance_map(resized_liver_portal)
+
+		resized_liver_hepatic = binarize(skTrans.resize(liver_hepatic, args.input_size, order = 0, preserve_range=True, anti_aliasing = True))
+		resized_liver_hepatic_dmap = compute_distance_map(resized_liver_hepatic)
 
 		# SAVE RESIZED IMAGE
 		output_ima = nib.Nifti1Image(resized_liver, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 		nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver.nii.gz')
+		if args.binary:
+			# SAVE RESIZED IMAGE
+			
+			output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_vessel.nii.gz')
+			output_portal_dmap = nib.Nifti1Image(resized_liver_portal_dmap, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_portal_dmap, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_dmap.nii.gz')
+			
+			output_hepatic = nib.Nifti1Image(resized_liver_hepatic, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_hepatic, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_hep_vessel.nii.gz')
+			output_hepatic_dmap = nib.Nifti1Image(resized_liver_hepatic_dmap, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
+			nib.save(output_hepatic_dmap, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_hep_dmap.nii.gz')
 
-		if not args.binary:
-			# NIFTI 2 NUMPY ND ARRAY
-			ima_hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][idx])).get_fdata()
+		else:
+			resized_multilabel = np.zeros_like(resized_liver_portal)
+			resized_multilabel = resized_liver_portal + binarize(resized_liver_hepatic,2)
 
-			# 3D INDEXING
-			liver_hepatic = extract_liver(ima_hepatic, info_dict, idx)
-
-			# RESIZE LABEL (+ LABEL BINARIZATION)
-			resized_liver_hepatic = binarize(skTrans.resize(liver_hepatic, args.input_size, order = 0, preserve_range=True, anti_aliasing = True),2)
-
-			resized_multilabel = np.zeros_like(ima_hepatic)
-			resized_multilabel = resized_liver_portal + resized_liver_hepatic
-
-			# SAVE RESIZED VESSELS
+			# SAVE RESIZED LABEL
 			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_vessel.nii.gz')
-			
-			resized_liver_hepatic_dmap = compute_distance_map(resized_liver_hepatic)
-			
-			resized_multilabel = np.zeros_like(ima_hepatic)
+			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_GT.nii.gz')
+
+			resized_multilabel = np.zeros_like(resized_liver_portal_dmap)
 			resized_multilabel = resized_liver_portal_dmap + resized_liver_hepatic_dmap
 
 			# SAVE RESIZED DISTANCE MAPS
 			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_dmap.nii.gz')
 
-		else:
-			# SAVE RESIZED VESSEL		
-			output_portal = nib.Nifti1Image(resized_liver_portal, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-			nib.save(output_portal, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_vessel.nii.gz')
-			# SAVE RESIZED LABEL		
-			output_portal_dmap = nib.Nifti1Image(resized_liver_portal_dmap, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
-			nib.save(output_portal_dmap, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_por_dmap.nii.gz')

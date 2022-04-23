@@ -355,63 +355,85 @@ def decollate_batch_list(prob ,test_labels):
 
 	return prediction, test_labels
 
-def compute_metric_binary(y_pred, y, args):
+def compute_metric_binary(y_pred, y, metric):
 
-	if args.metric == 'haus':
+	if metric == 'haus':
 		# metric_bin = HausdorffDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
 		metric = HausdorffDistanceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
-	elif args.metric == 'surfdist':
+	elif metric == 'surfdist':
 		# metric_bin = SurfaceDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
 		metric = SurfaceDistanceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
-	elif args.metric == 'dice':
+	elif metric == 'dice':
 		# metric_bin = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
 		metric = DiceMetric_bin(y_pred.cpu().numpy().astype(bool), y.cpu().numpy().astype(bool))
 
 	return metric
 
-def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
-	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
-	create_dir(output_route, remove_folder=True)
-	# dices = list()
-	metrics_test, metrics_test_p, metrics_test_h = list(),list(), list()
-	cld_metric, cld_metric_p, cld_metric_h = list(), list(), list()
+def save_predictions(prediction, idxlist, output_route, info_dict, k, args):
+	for input in prediction:
+		pos = idxlist[0]
 
-	if args.metric == 'haus':
-		# metric_bin = HausdorffDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
-		metric_multi = HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
-	elif args.metric == 'surfdist':
-		# metric_bin = SurfaceDistanceMetric(include_background=True, reduction="mean", get_not_nans=False)
-		metric_multi = SurfaceDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)
-	elif args.metric == 'dice':
-		# metric_bin = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
-		metric_multi = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
-	else: # Cldice case
-		metric = None
-	# dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=False)
+		if args.binary:
+			input = input.squeeze().cpu().numpy().astype(np.float32)
+		else:
+			input = input.squeeze().cpu().numpy().argmax(axis = 0).astype(np.float32)
+
+		# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CASUED BY RESIZING
+		unresized_result = veela.resize(input, info_dict, pos)
+		
+		if not args.binary: # "BINARIZATION" FOR MULTICLASS
+			unresized_result = np.round(unresized_result)
+		else:
+			unresized_result = veela.binarize(unresized_result)
+		
+
+		# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
+		result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
+
+		# NUMPY 2 NIFTI
+		output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+		if not args.binary:
+			nib.save(output, output_route + '/fold_'+str(k) + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
+			
+			# For better comparison
+			portal = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
+			hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
+			gt = nib.Nifti1Image(veela.binarize(portal,1) + veela.binarize(hepatic,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
+			nib.save(gt, output_route + '/fold_'+str(k) + '/' + info_dict['Image name'][pos] + '_gt_join.nii.gz')
+		else:
+			nib.save(output, output_route + '/fold_'+str(k) + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
+		idxlist.pop(0)
+
+def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
+	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
+	create_dir(output_route, remove_folder=False)
+	create_dir(output_route + '/fold_'+str(k), remove_folder=True)
+	dices_test, dices_test_p, dices_test_h, hauss_test, hauss_test_p, hauss_test_h, avgs_test, avgs_test_p, avgs_test_h = list(),list(), list(), list(),list(), list(), list(),list(), list()
+	cldice_vals, cldice_vals_p, cldice_vals_h, cld_metric, cld_metric_p, cld_metric_h = list(), list(), list(), list(), list(), list()
+
+	metrics_multi = [DiceMetric(include_background=False, reduction="mean", get_not_nans=False), 
+		HausdorffDistanceMetric(include_background=False, reduction="mean", get_not_nans=False), 
+		SurfaceDistanceMetric(include_background=False, reduction="mean", get_not_nans=False)]
 	idxlist = get_list_of_pos(json_dict, info_dict, 'Image name')
 	model.load_state_dict(torch.load(os.path.join(weights_dir, "best_metric_model.pth")))
 	model.eval()
 
 	with torch.no_grad():
 		for test_data in test_loader:
-			test_inputs, test_vessel_masks, test_dmap_masks = (test_data['image'].to(device), test_data['vessel'].to(device), test_data['dmap'].to(device))
-			prediction = model(test_inputs)
+			test_inputs, test_vessel_masks = (test_data['image'].to(device), test_data['vessel'].to(device))
 			# prob = sliding_window_inference(test_inputs, args.input_size, 4, model) # torch.Size([2, 3, 224, 224, 128])
 			test_output_vessels_, _ = model(test_inputs)
-
 
 			if args.binary:
 				prediction = [post_trans(i) for i in decollate_batch(test_output_vessels_)]
 				# prediction = [post_trans(i) for i in decollate_batch(prob)] # List of B (batch_size) elements, each is a tensor of (channels, H,W,D)
-				if args.metric == 'softdice':
-					for output, label in zip(prediction, test_vessel_masks):
-						clD = clDice_metric(output.squeeze().cpu().numpy().astype(bool), label.squeeze().cpu().numpy().astype(bool))
-						cld_metric.append(clD)
-					metric_test = np.mean(cld_metric)
-				else:
-					"""metric_bin(y_pred=prediction, y=test_labels)
-					metric_test = metric_bin.aggregate().item()"""
-					metric_test = compute_metric_binary(torch.stack(prediction).squeeze(), test_vessel_masks.squeeze(), args)
+				dice = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'dice')
+				haus = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'haus')
+				avg = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'surfdist')
+				for output, label in zip(prediction, test_vessel_masks):
+					clD = clDice_metric(output.squeeze().cpu().numpy().astype(bool), label.squeeze().cpu().numpy().astype(bool))
+					cld_metric.append(clD)
+				cldice = np.mean(cld_metric)
 					
 
 			else:
@@ -423,18 +445,8 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 				prediction_p, test_labels_p = decollate_batch_list(test_output_vessels_[:,1,:,:,:].unsqueeze(dim=1), test_vessel_masks)
 				# Hepatic only
 				prediction_h, test_labels_h = decollate_batch_list(test_output_vessels_[:,2,:,:,:].unsqueeze(dim=1), test_vessel_masks)
-				
 
-				"""test_labels_list = decollate_batch(test_labels)
-				test_labels = [
-					post_label(test_label_tensor) for test_label_tensor in test_labels_list
-				] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)
-				test_outputs_list = decollate_batch(prob)
-				prediction = [
-					post_pred(test_pred_tensor) for test_pred_tensor in test_outputs_list
-				] # List of B (batch_size) elements, each is a tensor of (3, H,W,D)"""
-
-				if args.metric == 'softdice':
+				"""if args.metric == 'softdice':
 					for output, label in zip(prediction, test_labels_):
 						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
 						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
@@ -451,84 +463,136 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, args):
 						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
 						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
 						cld_metric_h.append(clD)
-					metric_test_h = np.mean(cld_metric_h)
+					metric_test_h = np.mean(cld_metric_h)"""
 
-				else: # Comprobar uniques para hepatic
-					metric_multi(y_pred=prediction, y=test_labels_)
-					metric_test = metric_multi.aggregate().item()
 
-					"""metric_bin(y_pred=prediction_p, y=test_labels_p)
-					metric_test_p = metric_bin.aggregate().item()
 
-					metric_bin(y_pred=prediction_h, y=test_labels_h)
-					metric_test_h = metric_bin.aggregate().item()"""
+				metrics_multi[0](y_pred=prediction, y=test_labels_)
+				dice = metrics_multi[0].aggregate().item()
+				metrics_multi[1](y_pred=prediction, y=test_labels_)
+				haus = metrics_multi[1].aggregate().item()
+				metrics_multi[2](y_pred=prediction, y=test_labels_)
+				avg = metrics_multi[2].aggregate().item()
+				for output, label in zip(prediction, test_labels_):
+					clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					cld_metric.append(clD)
+				cldice = np.mean(cld_metric)
 
-					metric_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], args)
-					metric_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], args)
 
-				metrics_test_p.append(metric_test_p)
-				metrics_test_h.append(metric_test_h)
+				dice_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], 'dice')
+				dice_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], 'dice')
+				haus_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], 'haus')
+				haus_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], 'haus')
+				avg_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], 'surfdist')
+				avg_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], 'surfdist')
 
-			metrics_test.append(metric_test)
-			
+				# COMPROBAR QUÉ PASAR PARA OBTENER CLDICE METRIC BINARIA EN MULTICLASE
+				for output, label in zip(torch.stack(prediction)[:,1,:,:,:], torch.stack(label)[:,1,:,:,:]):
+					clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					cld_metric_p.append(clD)
+				cldice_p = np.mean(cld_metric_p)
+
+				for output, label in zip(torch.stack(prediction)[:,2,:,:,:], torch.stack(label)[:,2,:,:,:]):
+					clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
+					cld_metric_h.append(clD)
+				cldice_h = np.mean(cld_metric_h)
+
+
+				dices_test_p.append(dice_test_p)
+				dices_test_h.append(dice_test_h)
+				hauss_test_p.append(haus_test_p)
+				hauss_test_h.append(haus_test_h)
+				avgs_test_p.append(avg_test_p)
+				avgs_test_h.append(avg_test_h)
+				cldice_vals_p.append(cldice_p)
+				cldice_vals_h.append(cldice_h)
+				
+
+			dices_test.append(dice)
+			hauss_test.append(haus)
+			avgs_test.append(avg)
+			cldice_vals.append(cldice)
+
+			metrics_multi[0].reset()
+			metrics_multi[1].reset()
+			metrics_multi[2].reset()
+			cld_metric, cld_metric_p, cld_metric_h = list(), list(), list()
 
 			# SAVE SEGMENTATIONS
-			for input in prediction:
-				pos = idxlist[0]
+			save_predictions(prediction, idxlist, output_route, info_dict, k, args)
 
-				if args.binary:
-					input = input.squeeze().cpu().numpy().astype(np.float32)
-				else:
-					input = input.squeeze().cpu().numpy().argmax(axis = 0).astype(np.float32)
-
-				# UNRESIZE TO OWN LIVER SIZE + BINARIZATION CASUED BY RESIZING
-				unresized_result = veela.resize(input, info_dict, pos)
-				
-				if not args.binary: # "BINARIZATION" FOR MULTICLASS
-					unresized_result = np.round(unresized_result)
-				else:
-					unresized_result = veela.binarize(unresized_result)
-				
-
-				# INTRODUCE SEGMENTED LIVER IN BLACK VOLUME
-				result = veela.index_liver_in_volume(unresized_result, info_dict, pos)
-
-				# NUMPY 2 NIFTI
-				output = nib.Nifti1Image(result, info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-				if not args.binary:
-					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_join_segmented.nii.gz')
-					
-					# For better comparison
-					portal = nib.load(os.path.join(args.dataset_path, info_dict['Portal veins name'][pos])).get_fdata()
-					hepatic = nib.load(os.path.join(args.dataset_path, info_dict['Hepatic veins name'][pos])).get_fdata()
-					gt = nib.Nifti1Image(veela.binarize(portal,1) + veela.binarize(hepatic,2), info_dict['Affine matrix'][pos], info_dict['Header'][pos])
-					nib.save(gt, output_route + '/' + info_dict['Image name'][pos] + '_gt_join.nii.gz')
-				else:
-					nib.save(output, output_route + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
-				idxlist.pop(0)
-
-
-
-		if args.metric != 'softdice':
-			metric_multi.reset()
-		else:
-			cld_metric = list()
-
-			
 	if args.binary:
-		with open('./metrics.txt', 'w') as f:
-			f.write('Mean: {}\nStd: {}\n'.format(np.mean(metrics_test), statistics.stdev(metrics_test)))
+		dice_mean = np.mean(dices_test) # total_mean = np.mean(metrics_l[0])
+		dice_std = statistics.stdev(dices_test) # total_std = statistics.stdev(metrics_l[0])
+		haus_mean = np.mean(hauss_test) # total_mean = np.mean(metrics_l[0])
+		haus_std = statistics.stdev(hauss_test) # total_std = statistics.stdev(metrics_l[0])
+		avg_mean = np.mean(avgs_test) # total_mean = np.mean(metrics_l[0])
+		avg_std = statistics.stdev(avgs_test) # total_std = statistics.stdev(metrics_l[0]) 
+		cldice_mean = np.mean(cldice_vals) 
+		cldice_std = statistics.stdev(cldice_vals)
+
+		with open('./metrics_'+str(k)+'.txt', 'w') as f:
+			f.write('Dice Mean: {}\nDice Std: {}\nHausdorff Distance Mean: {}\nHausdorff Distance Std: {}\nAverage Surface Distance Mean: {}\nAverage Surface Distance Std: {}\nCldice mean: {}\nCldice std: {}\n'.format(dice_mean, dice_std, haus_mean, haus_std, avg_mean, avg_std, cldice_mean, cldice_std))
+
+			return [dice_mean, dice_std, haus_mean, haus_std, avg_mean, avg_std, cldice_mean, cldice_std]
 	else:
-		with open('./metrics.txt', 'w') as f:
-			f.write('Portal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\n'.format(
-				np.mean(metrics_test_p), statistics.stdev(metrics_test_p),
-				np.mean(metrics_test_h), statistics.stdev(metrics_test_h),
-				np.mean(metrics_test), statistics.stdev(metrics_test)
+		dice_portal_mean = np.mean(dices_test_p) # portal_mean = np.mean(metrics_l[1])
+		dice_portal_std = statistics.stdev(dices_test_p) # portal_std = statistics.stdev(metrics_l[1])
+		dice_hepatic_mean = np.mean(dices_test_h) # hepatic_mean = np.mean(metrics_l[2])
+		dice_hepatic_std = statistics.stdev(dices_test_h) # hepatic_std = statistics.stdev(metrics_l[2])
+		haus_portal_mean = np.mean(hauss_test_p) # portal_mean = np.mean(metrics_l[1])
+		haus_portal_std = statistics.stdev(hauss_test_p) # portal_std = statistics.stdev(metrics_l[1])
+		haus_hepatic_mean = np.mean(hauss_test_h) # hepatic_mean = np.mean(metrics_l[2])
+		haus_hepatic_std = statistics.stdev(hauss_test_h) # hepatic_std = statistics.stdev(metrics_l[2])
+		avg_portal_mean = np.mean(avgs_test_p) # portal_mean = np.mean(metrics_l[1])
+		avg_portal_std = statistics.stdev(avgs_test_p) # portal_std = statistics.stdev(metrics_l[1])
+		avg_hepatic_mean = np.mean(avgs_test_h) # hepatic_mean = np.mean(metrics_l[2])
+		avg_hepatic_std = statistics.stdev(avgs_test_h) # hepatic_std = statistics.stdev(metrics_l[2])
+		cldice_portal_mean = np.mean(cldice_vals_p)
+		cldice_portal_std = statistics.stdev(cldice_vals_p)
+		cldice_hepatic_mean = np.mean(cldice_vals_h)
+		cldice_hepatic_std = statistics.stdev(cldice_vals_h)
+
+		dice_mean = np.mean(dices_test) # total_mean = np.mean(metrics_l[0])
+		dice_std = statistics.stdev(dices_test) # total_std = statistics.stdev(metrics_l[0])
+		haus_mean = np.mean(hauss_test) # total_mean = np.mean(metrics_l[0])
+		haus_std = statistics.stdev(hauss_test) # total_std = statistics.stdev(metrics_l[0])
+		avg_mean = np.mean(avgs_test) # total_mean = np.mean(metrics_l[0])
+		avg_std = statistics.stdev(avgs_test) # total_std = statistics.stdev(metrics_l[0])
+		cldice_mean = np.mean(cldice_vals) 
+		cldice_std = statistics.stdev(cldice_vals)
+
+		with open('./metrics_'+str(k)+'.txt', 'w') as f:
+			f.write('DICE METRIC\nPortal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\nHAUSDORFF DISTANCE\nPortal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\nAVERAGE SURFACE DISTANCE\nPortal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\nCLDICE METRIC\nPortal mean: {}\nStd: {}\nHepatic mean: {}\nStd: {}\nTotal mean: {}\nStd: {}\n'.format(
+				dice_portal_mean, dice_portal_std,
+				dice_hepatic_mean, dice_hepatic_std,
+				dice_mean, dice_std,
+				haus_portal_mean, haus_portal_std,
+				haus_hepatic_mean, haus_hepatic_std,
+				haus_mean, haus_std,
+				avg_portal_mean, avg_portal_std,
+				avg_hepatic_mean, avg_hepatic_std,
+				avg_mean, avg_std,
+				cldice_portal_mean, cldice_portal_std,
+				cldice_hepatic_mean, cldice_hepatic_std,
+				cldice_mean, cldice_std
 			))
 
+	return [dice_mean, dice_std,
+	dice_portal_mean, dice_portal_std,
+	dice_hepatic_mean, dice_hepatic_std,
+	haus_mean, haus_std,
+	haus_portal_mean, haus_portal_std,
+	haus_hepatic_mean, haus_hepatic_std,
+	avg_mean, avg_std, 
+	avg_portal_mean, avg_portal_std,
+	avg_hepatic_mean, avg_hepatic_std,
+	cldice_mean, cldice_std,
+	cldice_portal_mean, cldice_portal_std,
+	cldice_hepatic_mean, cldice_hepatic_std]
 
-	"""with open('./metrics.txt', 'w') as f:
-		f.write('Mean: {}\nStd: {}\n'.format(np.mean(metrics_test), statistics.stdev(metrics_test)))"""
 
 
 def load_veela_datalist(data_list_file_path: PathLike, data_list_key: str = "training") -> List[Dict]:
