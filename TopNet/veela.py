@@ -129,7 +129,7 @@ def cluster_tree(volume, skel, indices):
 
 	clustered_tree = np.zeros_like(skeleton.path_label_image())
 
-	for h,w,d in zip(x,y,z):
+	for h,w,d in product(x,y,z):
 		clustered_tree[h,w,d] = skeleton.path_label_image()[indices[:,h,w,d][0], indices[:,h,w,d][1], indices[:,h,w,d][2]]
 
 	return clustered_tree
@@ -219,7 +219,7 @@ def compute_orientation_tree(volume, indices):
 	orientation_tree = np.zeros((3, np.shape(skel)[0], np.shape(skel)[1], np.shape(skel)[2]))
 	orientation_skel = compute_orientation_skel(skel)
 
-	for h,w,d in zip(x,y,z):
+	for h,w,d in product(x,y,z):
 		orientation_tree[:,h,w,d] = orientation_skel[:, indices[:,h,w,d][0], indices[:,h,w,d][1], indices[:,h,w,d][2]]
 
 	return orientation_tree
