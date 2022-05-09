@@ -1,4 +1,3 @@
-from math import prod
 import nibabel as nib
 import numpy as np
 import os
@@ -306,7 +305,7 @@ if __name__ == '__main__':
 	radius_p, radius_h = list(), list()
 
 	bar_ = tqdm(sorted(os.listdir(dataset_path)))
-	for name in bar_:
+	"""for name in bar_:
 		bar_.set_description('Processing {}'.format(name))
 		if 'por' in name:
 			# Portal
@@ -346,6 +345,15 @@ if __name__ == '__main__':
 			low, mid, high = kmeans_tree(radius, clustered_tree)
 			output_ima = nib.Nifti1Image(binarize(low) + binarize(mid, 2) + binarize(high,3), ima_nifti.affine, ima_nifti.header)
 			nib.save(output_ima, os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/3_clusters', name.split('-')[0] + '-VE-hep-segmented.nii.gz'))
-			radius_h.append(radius)
+			radius_h.append(radius)"""
+
+	y_true_nifti = nib.load('/home/guijosa/Documents/PythonDocs/VEELA/dataset/001-VE-por.nii.gz')
+	y_true  = y_true_nifti.get_fdata()
+
+	skel = img_as_float32(skeletonize_3d(y_true)).astype(np.uint8)
+	dmap, indices = DTM(1-skel, return_indices=True)
+
+	clustered_tree = nib.load('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled/001-VE-por-labelled.nii.gz')
+	orientation_tree = compute_orientation_tree(y_true, indices)
 
 	print('DONE')

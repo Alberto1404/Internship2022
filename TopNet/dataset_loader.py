@@ -19,56 +19,66 @@ from monai.transforms import (
 from utils import load_veela_datalist
 
 
-def transformations(size):
+def transformations(args):
+	keys = ['image', 'vessel']
+	if len(args.decoder) == 2:
+		keys.append('dmap')
+		keys.append('ori')
+	else:
+		if args.decoder[0] == 'dmap':
+			keys.append('dmap')
+		else:
+			keys.append('ori')
+	
 	train_transforms = Compose(
 		[
-			LoadImaged(keys=["image", "vessel", "dmap"]),
-			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
-			RandZoomd(keys=["image", "vessel", "dmap"], min_zoom=1.1, max_zoom=2, prob = 0.3),
+			LoadImaged(keys=keys),
+			EnsureChannelFirstd(keys= keys if not 'ori' in keys else keys[:-1]),
+			Orientationd(keys=keys, axcodes="RAS"),
+			RandZoomd(keys=keys, min_zoom=1.1, max_zoom=2, prob = 0.3),
 			RandFlipd(
-				keys=["image", "vessel", "dmap"],
+				keys=keys,
 				spatial_axis=[0],
 				prob=0.50,
 			),
 			RandFlipd(
-				keys=["image", "vessel", "dmap"],
+				keys=keys,
 				spatial_axis=[1],
 				prob=0.50,
 			),
 			RandFlipd(
-				keys=["image", "vessel", "dmap"],
+				keys=keys,
 				spatial_axis=[2],
 				prob=0.50,
 			),
 			RandRotated(
-				keys = ["image", "vessel", "dmap"],
+				keys = keys,
 				range_x = np.pi/9,
 				range_y = np.pi/9,
 				range_z = np.pi/9,
 				prob = 0.50
 			),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-			ToTensord(keys=["image", "vessel", "dmap"]),
+			ToTensord(keys=keys),
 		]
 	)
 	val_transforms = Compose(
 		[
-			LoadImaged(keys=["image", "vessel", "dmap"]),
-			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
+			LoadImaged(keys=keys),
+			EnsureChannelFirstd(keys= keys if not 'ori' in keys else keys[:-1]),
+			Orientationd(keys=keys, axcodes="RAS"),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-			ToTensord(keys=["image", "vessel", "dmap"]),
+			ToTensord(keys=keys),
 		]
 	)
 
 	test_transforms = Compose(
 		[
-			LoadImaged(keys=["image", "vessel", "dmap"]),
-			EnsureChannelFirstd(keys=["image", "vessel", "dmap"]),
-			Orientationd(keys=["image", "vessel", "dmap"], axcodes="RAS"),
+			LoadImaged(keys=keys),
+			EnsureChannelFirstd(keys= keys if not 'ori' in keys else keys[:-1]),
+			Orientationd(keys=keys, axcodes="RAS"),
 			NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-			ToTensord(keys=["image", "vessel", "dmap"]),
+			ToTensord(keys=keys),
 		]
 	)
 	return train_transforms, val_transforms, test_transforms
@@ -82,7 +92,7 @@ def get_loaders(args, json_routes):
 	val_files = load_veela_datalist(datasets, "validation")
 	test_files = load_veela_datalist(datasets, "test")
 	
-	train_transforms, val_transforms, test_transforms  = transformations(args.input_size)
+	train_transforms, val_transforms, test_transforms  = transformations(args)
 
 	train_ds = CacheDataset(
 		data=datalist,

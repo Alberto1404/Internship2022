@@ -1,11 +1,13 @@
-from unetr_topnet import UNETR_topnet
+from unetr_topnet_2dec import UNETR_topnet_2
+from unetr_topnet_2dec_ori import UNETR_topnet_2_ori
+from unetr_topnet_3dec import UNETR_topnet_3
 from monai.losses import DiceCELoss
 
 import sys
 import os
 import numpy as np
 import torch
-from torch.nn import SmoothL1Loss, ReLU, Module
+from torch.nn import SmoothL1Loss, L1Loss, ReLU, Module
 
 # Add topology functions
 sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice')) # Modify topology path
@@ -33,19 +35,8 @@ class C_loss (Module):
 
 def get_model_loss(args):
 
-
-	if args.net == 'unet':
-		model = UNet(
-			spatial_dims=3,
-			in_channels=1,
-			out_channels= 1 if args.binary == True else 3,
-			channels=(16, 32, 64, 128, 256),
-			strides=(2, 2, 2, 2),
-			num_res_units=2,
-		)
-		
-	else:
-		model = UNETR_topnet(
+	if len(args.decoder) == 2:
+		model = UNETR_topnet_3(
 			in_channels=1,
 			out_channels=1 if args.binary == True else 3,
 			img_size = args.input_size,
@@ -59,16 +50,54 @@ def get_model_loss(args):
 			dropout_rate = args.dropout_rate,
 			spatial_dims=3
 		)
-
-	# loss_function = soft_dice_cldice() if args.cldice == True else (DiceCELoss(sigmoid=True, to_onehot_y=False) if args.binary == True else DiceCELoss(softmax=True, to_onehot_y=True))
-	if args.metric == 'softdice':
-		loss_function = soft_dice_cldice(binary=True) if args.binary else soft_dice_cldice(binary=False)
 	else:
-		if args.binary:
-			loss_function_1 = DiceCELoss(sigmoid=True, to_onehot_y=False)
-			loss_function_2 = C_loss()
+		if args.decoder[0] == 'dmap':
+			model = UNETR_topnet_2(
+				in_channels=1,
+				out_channels=1 if args.binary == True else 3,
+				img_size = args.input_size,
+				feature_size = args.feature_size,
+				hidden_size = args.hidden_size, 
+				mlp_dim = args.mlp_dim, 
+				num_heads = args.num_heads,
+				pos_embed = args.pos_embed,
+				norm_name = args.norm_name,
+				res_block = args.res_block,
+				dropout_rate = args.dropout_rate,
+				spatial_dims=3
+			)
 		else:
-			loss_function_1 = DiceCELoss(softmax=True, to_onehot_y=True)
-			loss_function_2 = C_loss()
+			model = UNETR_topnet_2_ori(
+				in_channels=1,
+				out_channels=1 if args.binary == True else 3,
+				img_size = args.input_size,
+				feature_size = args.feature_size,
+				hidden_size = args.hidden_size, 
+				mlp_dim = args.mlp_dim, 
+				num_heads = args.num_heads,
+				pos_embed = args.pos_embed,
+				norm_name = args.norm_name,
+				res_block = args.res_block,
+				dropout_rate = args.dropout_rate,
+				spatial_dims=3
+			)
 
-	return model, loss_function_1, loss_function_2
+	
+	# loss_function = soft_dice_cldice() if args.cldice == True else (DiceCELoss(sigmoid=True, to_onehot_y=False) if args.binary == True else DiceCELoss(softmax=True, to_onehot_y=True)
+
+	
+	if args.binary:
+		loss_function_1 = DiceCELoss(sigmoid=True, to_onehot_y=False)
+	else:
+		loss_function_1 = DiceCELoss(softmax=True, to_onehot_y=True)
+	loss_function_2 = C_loss()
+	loss_function_3 = L1Loss()
+
+	if len(args.decoder) == 2:
+		return model, [loss_function_1, loss_function_2, loss_function_3]
+	else:
+		if args.decoder[0] == 'dmap':
+			return model, [loss_function_1, loss_function_2]
+		else:
+			return model, [loss_function_1, loss_function_3]
+		

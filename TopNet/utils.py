@@ -2,11 +2,9 @@ import os
 import json
 import numpy as np
 import random
-from scipy.fft import dst
 import torch
 import skimage.transform as skTrans
 import nibabel as nib
-import glob
 import statistics
 import sys
 
@@ -125,8 +123,9 @@ def create_json_file(dst_folder, info_dict, args): # Add segmentation flag for f
 	folds_training, folds_validation, folds_test = kfcv(indexes_list, args.k)
 	json_routes = list()
 	dictionary_list = list()
-	ending_1 = '-VE-liver_multi_vessel' if args.binary == False else '-VE-liver_por_vessel' # Define as desired
-	ending_2 = '-VE-liver_multi_dmap' if args.binary == False else '-VE-liver_por_dmap' # Define as desired
+	ending_1 = '-VE-liver_multi_vessel' if args.binary == False else ('-VE-liver_por_vessel' if args.vessel == 'portal' else '-VE-liver_hep_vessel') # Define as desired
+	ending_2 = '-VE-liver_multi_dmap' if args.binary == False else ('-VE-liver_por_dmap' if args.vessel == 'portal' else '-VE-liver_hep_dmap') # Define as desired
+	ending_3 = '-VE-liver_por_ori' if args.vessel == 'portal' else '-VE-liver_hep_ori' # Define as desired
 
 	for fold in tqdm(range(np.shape(folds_training)[1])):
 		# Data to be written
@@ -136,182 +135,217 @@ def create_json_file(dst_folder, info_dict, args): # Add segmentation flag for f
 				{
 					"image": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[0, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[1, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[2, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[3, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[4, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[5, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_test[6, fold]).zfill(3) + ending_3 + '.nii.gz')
 				}
 			],
 			"training": [
 				{
 					"image": os.path.join(dst_folder,str(folds_training[0, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[0,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[0, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[0, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[0, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[1, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[1,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[1, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[1, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[1, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[2, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[2,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[2, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[2, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[2, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[3, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[3,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[3, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[3, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[3, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[4, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[4,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[4, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[4, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[4, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[5, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[5,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[5, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[5, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[5, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[6, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[6,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[6, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[6, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[6, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[7, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[7,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[7, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[7, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[7, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[8, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[8,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[8, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[8, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[8, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[9, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[9,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[9, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[9, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[9, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[10, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[10,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[10, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[10, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[10, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[11, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[11,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[11, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[11, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[11, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[12, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[12,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[12, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[12, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[12, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[13, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[13,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[13, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[13, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[13, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[14, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[14,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[14, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[14, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[14, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[15, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[15,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[15, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[15, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[15, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[16, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[16,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[16, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[16, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[16, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[17, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[17,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[17, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[17, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[17, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[18, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[18,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[18, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[18, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[18, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[19, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[19,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[19, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[19, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[19, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[20, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[20,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[20, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[20, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[20, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[21, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[21,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[21, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[21, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[21, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_training[22, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_training[22,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_training[22, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_training[22, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_training[22, fold]).zfill(3) + ending_3 + '.nii.gz')
 				}
 			],
 			"validation": [
 				{
 					"image": os.path.join(dst_folder,str(folds_validation[0, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_validation[0,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_validation[0, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_validation[0, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_validation[0, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_validation[1, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_validation[1,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_validation[1, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_validation[1, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_validation[1, fold]).zfill(3) + ending_3 + '.nii.gz')
 					
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_validation[2, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_validation[2,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_validation[2, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_validation[2, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_validation[2, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_validation[3, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_validation[3,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_validation[3, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_validation[3, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_validation[3, fold]).zfill(3) + ending_3 + '.nii.gz')
 				},
 				{
 					"image": os.path.join(dst_folder,str(folds_validation[4, fold]).zfill(3) + '-VE-liver' + '.nii.gz'),
 					"vessel": os.path.join(dst_folder,str(folds_validation[4,fold]).zfill(3) + ending_1 + '.nii.gz'),
-					"dmap": os.path.join(dst_folder,str(folds_validation[4, fold]).zfill(3) + ending_2 + '.nii.gz')
+					"dmap": os.path.join(dst_folder,str(folds_validation[4, fold]).zfill(3) + ending_2 + '.nii.gz'),
+					"ori": os.path.join(dst_folder,str(folds_validation[4, fold]).zfill(3) + ending_3 + '.nii.gz')
 				}
 			]
 		}

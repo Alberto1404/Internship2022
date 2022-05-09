@@ -65,10 +65,12 @@ def plot_slices(model,val_ds, size, weights_dir, dictionary):
 	plt.xlabel("Epoch")
 	plt.plot(x, y)
 	plt.savefig(current_path + '/metric_loss.png')"""
-from scipy.signal import unit_impulse
+
+
 def save_loss_metric(loss_training, metric_values, loss_validation, fold, best_epoch, args):
 
-	x = np.arange(len(loss_training)) + 1
+	# PLOT HABITUAL DE TRAINING Y VALIDATION
+	"""x = np.arange(len(loss_training)) + 1
 
 	plt.figure('training', (12,6))
 
@@ -93,4 +95,28 @@ def save_loss_metric(loss_training, metric_values, loss_validation, fold, best_e
 	plt.ylim([0, 1])
 	plt.legend(['Validation dice', 'Saved'])
 	plt.savefig(current_path + '/metric_loss_'+str(fold)+'.png')
-	plt.clf()
+	plt.clf()"""
+
+	x = np.arange(len(metric_values)) + 1
+
+	fig = plt.figure("train", (12, 6))
+
+	ax0 = fig.add_subplot(1,2,1)
+	ax1 = ax0.twinx()
+	ax2 = fig.add_subplot(1,2,2)
+	# ax3 = ax2.twinx()
+
+	# ax1.get_shared_y_axes().join(ax1, ax3)
+	c1, = ax0.plot(x, loss_training[1][-args.epochs:], c = 'tab:blue')
+	c2, = ax0.plot(x, loss_validation[1][-args.epochs:], c = 'tab:green')
+	c3, = ax1.plot(x, loss_training[2][-args.epochs:], c = 'tab:orange')
+	c4, = ax1.plot(x, loss_validation[2][-args.epochs:], 'tab:pink')
+
+	if args.decoder[0] == 'dmap':
+		ax0.legend([c1,c2,c3,c4], ['Train vessel loss', 'Val vessel loss', 'Train dmap loss', 'Val dmap loss'])
+	if args.decoder[0] == 'ori':
+		ax0.legend([c1,c2,c3,c4], ['Train vessel loss', 'Val vessel loss', 'Train ori loss', 'Val ori loss'])
+	c5, = ax2.plot(x, metric_values)
+	ax2.legend([c5],['Validation dice'])
+	plt.savefig(current_path + '/metric_loss_'+str(fold)+'.png')
+	fig.clf()
