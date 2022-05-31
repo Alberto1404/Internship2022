@@ -66,38 +66,12 @@ def kfcv(dataset, k):
 
 	folds_training = np.zeros((23,k))
 	folds_validation = np.zeros((5,k))
-	# folds_test = np.zeros((7,k))
-	folds_test = np.reshape(sorted(random.sample(dataset,7)) * k, (5,7)).T # Expected shape: (7,5)
-
-	for fold in range(k):
-		validation = sorted(random.sample(dataset,5))
-		while any(item in folds_test[:,fold] for item in validation):
-			validation = sorted(random.sample(dataset,5))
-		training = sorted(list(set(dataset) - set(folds_test[:,fold]) - set(validation)))
-
-		folds_training[:,fold] = training
-		folds_validation[:,fold] = validation
-
-	"""print('Performing K-Fold Cross-Vailidation... ')
-	data_backup = dataset.copy() # Dataset is the list with all the idxs
-
-	folds_training = np.zeros((23,k))
-	folds_validation = np.zeros((5,k))
 	folds_test = np.zeros((7,k))
-	
+
 	for fold in range(k):
-		training = sorted(random.sample(dataset,23))
-		print('\nTraining indexed obtained, obtaining validation... ')
-		validation = sorted(random.sample(dataset,5))
-		while any(item in training for item in validation):
-			validation = sorted(random.sample(dataset,5))
-		print('\nValidation indexes obtained!!!')
-		test = sorted(list(set(dataset) - set(training) - set(validation)))
-
-		folds_training[:,fold] = training
-		folds_validation[:,fold] = validation
-		folds_test[:,fold] = test"""
-
+		folds_training[:,fold] = np.roll(dataset,-7*fold)[:23]
+		folds_validation[:,fold] = np.roll(dataset,-7*fold)[23:28]
+		folds_test[:,fold] = np.roll(dataset,-7*fold)[-7:]
 	return folds_training.astype(int), folds_validation.astype(int), folds_test.astype(int)
 
 def json2dict(directory):
