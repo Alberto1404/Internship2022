@@ -63,10 +63,14 @@ def get_index_dict(my_dict):
 def kfcv(dataset, k):
 	print('Performing K-Fold Cross-Validation... ')
 	data_backup = dataset.copy() # Dataset is the list with all the idxs
-
+	
+	# Fixed size in VEELA -> 23 training - 5 validation - 7 test
 	folds_training = np.zeros((23,k))
 	folds_validation = np.zeros((5,k))
 	folds_test = np.zeros((7,k))
+	
+	# Provide randomness for KFCV, comment if necessary
+	np.random.shuffle(dataset)
 
 	for fold in range(k):
 		folds_training[:,fold] = np.roll(dataset,-7*fold)[:23]
