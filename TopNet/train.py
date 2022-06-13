@@ -370,12 +370,12 @@ def main(args):
 	utils.create_dir(reshaped_liver_dir, remove_folder = False)
 	utils.split_dataset(info_dict, reshaped_liver_dir, args)
 
-	# json_routes, dictionary_list = utils.create_json_file(reshaped_liver_dir, info_dict, args)
-	if args.binary:
+	json_routes, dictionary_list = utils.create_json_file(reshaped_liver_dir, info_dict, args)
+	"""if args.binary:
 		json_routes = [os.path.join('/home/guijosa/Documents/PythonDocs/TopNet/clDice','binary',('dmap' if (len(args.decoder) == 1 and args.decoder[0] == 'dmap') else 'ori' if (len(args.decoder) == 1 and args.decoder[0] == 'ori') else '3dec'),args.vessel,'VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
 	else:
-		json_routes = [os.path.join('/home/guijosa/Documents/PythonDocs/TopNet/clDice','multi','VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
-	dictionary_list = [utils.json2dict(json_routes[i]) for i in range(args.k)] # KFCV given splits
+		json_routes = [os.path.join('/home/guijosa/Documents/PythonDocs/TopNet/clDice','multi','VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits"""
+	# dictionary_list = [utils.json2dict(json_routes[i]) for i in range(args.k)] # KFCV given splits
 
 	my_metrics = [DiceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
 				  HausdorffDistanceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
@@ -452,15 +452,15 @@ def main(args):
 			args)
 
 
-		metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
+		"""metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
 		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
-		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training (C_loss (D2) or L1Loss (D3))
+		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training (C_loss (D2) or MSELoss (D3))
 		if len(args.decoder) == 2:
 			metrics_all[fold,3,:] = np.asarray(losses_tr[3][-args.epochs:]) # Training L1Loss
 
 		metrics_all[fold,3,:] = np.asarray(losses_val[0][-args.epochs:]) # Validation loss (DiceCELoss + lambda * C_loss)
 		metrics_all[fold,4,:] = np.asarray(losses_val[1][-args.epochs:]) # Validation DiceCELoss
-		metrics_all[fold,5,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation (C_loss (D2) or L1Loss (D3))
+		metrics_all[fold,5,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation (C_loss (D2) or MSELoss (D3))
 		if len(args.decoder) == 2:
 			metrics_all[fold,6,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation L1Loss
 			metrics_all[fold,7,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
@@ -472,7 +472,17 @@ def main(args):
 			metrics_all[fold,6,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
 			metrics_all[fold,7,:] = np.asarray(metric_list[1][-args.epochs:]) # Hausdorff distance metric
 			metrics_all[fold,8,:] = np.asarray(metric_list[2][-args.epochs:]) # Average Surface Distance
-			metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)
+			metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)"""
+		metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
+		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
+		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training C_loss
+		metrics_all[fold,3,:] = np.asarray(losses_val[0][-args.epochs:]) # Validation loss (DiceCELoss + lambda * C_loss)
+		metrics_all[fold,4,:] = np.asarray(losses_val[1][-args.epochs:]) # Validation DiceCELoss
+		metrics_all[fold,5,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation C_loss
+		metrics_all[fold,6,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
+		metrics_all[fold,7,:] = np.asarray(metric_list[1][-args.epochs:]) # Hausdorff distance metric
+		metrics_all[fold,8,:] = np.asarray(metric_list[2][-args.epochs:]) # Average Surface Distance
+		metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)
 
 		# SAVE METRIC / LOSS PLOTS
 		# plots.save_loss_metric(losses_tr[0][-args.epochs:], metric_list[0][-args.epochs:], losses_val[0][-args.epochs:], fold, best_epoch, args) # CASO NORMAL
