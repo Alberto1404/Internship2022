@@ -1,4 +1,3 @@
-from secrets import choice
 import torch
 import argparse
 import os
@@ -20,7 +19,7 @@ from monai.metrics import DiceMetric, HausdorffDistanceMetric, SurfaceDistanceMe
 from scipy.io import savemat
 
 # Add topology functions
-sys.path.insert(0,os.path.join(os.path.abspath(os.getcwd()), 'clDice')) # Modify topology path
+sys.path.insert(0,'...') # Modify topology path
 from clDice.cldice_metric.cldice import clDice as clDice_metric
 
 from monai.inferers import sliding_window_inference
