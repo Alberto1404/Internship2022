@@ -10,7 +10,7 @@ from unetr_topnet_2dec_ori import UNETR_topnet_2_ori
 from unetr_topnet_3dec import UNETR_topnet_3
 
 # Add topology functions
-sys.path.insert(0,...) # Modify clDice topology path
+sys.path.insert(0,'...') # Modify clDice topology path
 from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
 class C_loss (Module):
