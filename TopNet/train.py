@@ -58,80 +58,17 @@ def get_epoch_iterator(args):
 def validation(model, val_loader, metric, criterions, post_trans, args):
 
 	criterion_vessel = criterions[0]
-
-	if len(args.decoder) == 2:
-		criterion_dmap = criterions[1]
-		criterion_ori = criterions[2]
-	else:
-		if args.decoder[0] == 'dmap':
-			criterion_dmap = criterions[1]
-		else:
-			criterion_ori = criterions[1]
-
-
+	criterion_dmap = criterions[1]
 	dice_vals, haus_vals, avg_vals, cldice_vals = list(), list(), list(), list()
 	cld_metric = list()
-	loss_vals, loss_vessels = list(), list()
-
-	val_loss = [loss_vals, loss_vessels]
-	if len(args.decoder) == 2:
-		loss_dmaps = list()
-		loss_oris = list()
-		val_loss.append(loss_dmaps)
-		val_loss.append(loss_oris)
-	else:
-		if args.decoder[0] == 'dmap':
-			loss_dmaps = list()
-			val_loss.append(loss_dmaps)
-		else:
-			loss_oris = list()
-			val_loss.append(loss_oris)
+	loss_vals, loss_vessels, loss_dmaps = list(), list(), list()
 
 	model.eval()
 	with torch.no_grad():
 		for batch in val_loader:
+			val_inputs, val_vessel_masks, val_dmap_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device))
 			# val_outputs_ = sliding_window_inference(val_inputs, args.input_size, 4, model)
-			if len(args.decoder) == 2:
-				val_inputs, val_vessel_masks, val_dmap_masks, val_ori_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device), batch['ori'].to(device))
-
-				val_output_vessels_, val_output_dmap_, val_output_ori_ = model(val_inputs)
-
-				loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
-				loss_vessels.append(loss_1.item())
-				loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
-				loss_dmaps.append(loss_2.item())
-				loss_3 = criterion_ori(val_output_ori_, val_ori_masks)
-				loss_oris.append(loss_3.item())
-
-				# Plotear con twin axes para ver ratio
-				loss = loss_1 + args.alpha_dmap * loss_2 + args.alpha_ori * loss_3
-				loss_vals.append(loss.item())
-			else:
-				if args.decoder[0] == 'dmap':
-					val_inputs, val_vessel_masks, val_dmap_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device))
-
-					val_output_vessels_, val_output_dmap_ = model(val_inputs)
-
-					loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
-					loss_vessels.append(loss_1.item())
-					loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
-					loss_dmaps.append(loss_2.item())
-
-					loss = loss_1 + args.alpha_dmap * loss_2
-					loss_vals.append(loss.item())
-				else:
-					val_inputs, val_vessel_masks, val_ori_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['ori'].to(device))
-					val_output_vessels_, val_output_ori_ = model(val_inputs)
-					
-					loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
-					loss_vessels.append(loss_1.item())
-					loss_3 = criterion_ori(val_output_ori_, val_ori_masks)
-					loss_oris.append(loss_3.item())
-
-					# Plotear con twin axes para ver ratio
-					loss = loss_1 + args.alpha_ori * loss_3
-					loss_vals.append(loss.item())
-			
+			val_output_vessels_, val_output_dmap_ = model(val_inputs)
 
 			if args.binary:
 				val_output_vessels = [post_trans(i) for i in decollate_batch(val_output_vessels_)]
@@ -170,6 +107,14 @@ def validation(model, val_loader, metric, criterions, post_trans, args):
 			avg_vals.append(avg_val)
 			cldice_vals.append(metric_val)
 
+			loss_1 = criterion_vessel(val_output_vessels_, val_vessel_masks)
+			loss_vessels.append(loss_1.item())
+			loss_2 = criterion_dmap(val_output_dmap_, val_dmap_masks, val_vessel_masks)
+			loss_dmaps.append(loss_2.item())
+			# loss = args.alpha*loss_1 + (1-args.alpha) * loss_2
+			loss = loss_1 + args.alpha * loss_2
+
+			loss_vals.append(loss.item())
 
 			[x.reset() for x in metric]
 			# metric[0].reset()
@@ -181,51 +126,19 @@ def validation(model, val_loader, metric, criterions, post_trans, args):
 	mean_haus_vals = np.mean(haus_vals)
 	mean_avg_vals = np.mean(avg_vals)
 	mean_cldice_vals = np.mean(cldice_vals)
-	val_loss = list()
 	mean_loss_val = np.mean(loss_vals)
-	val_loss.append(mean_loss_val) # Total loss
 	mean_loss_1 = np.mean(loss_vessels)
-	val_loss.append(mean_loss_1) # Vessel loss
-	if len(args.decoder) == 2:
-		mean_loss_2 = np.mean(loss_dmaps)
-		mean_loss_3 = np.mean(loss_oris)
-		val_loss.append(mean_loss_2)
-		val_loss.append(mean_loss_3)
-	else:
-		if args.decoder[0] == 'dmap':
-			mean_loss_2 = np.mean(loss_dmaps)
-			val_loss.append(mean_loss_2)
-		else:
-			mean_loss_3 = np.mean(loss_oris)
-			val_loss.append(mean_loss_3)
-
+	mean_loss_2 = np.mean(loss_dmaps)
 	# print('\n\tValidation dice: {}\tValidation loss: {}'.format(mean_dice_val, mean_loss_val))
 
-	return [mean_dice_vals, mean_haus_vals, mean_avg_vals, mean_cldice_vals], val_loss
+	return [mean_dice_vals, mean_haus_vals, mean_avg_vals, mean_cldice_vals], [mean_loss_val, mean_loss_1, mean_loss_2]
 
-
-"""if args.decoder == 'dmap':
-
-	elif args.decoder == 'ori':
-
-	else:"""
 
 def train(model, train_loader, val_loader, optimizer, metric, criterions, lossses_list_tr, lossses_list_val, metric_list, fold, args):
 	dice_val_best = -1
 	best_epoch = -1
-
 	criterion_vessel = criterions[0]
-	if len(args.decoder) == 2:
-		criterion_dmap = criterions[1]
-		criterion_ori = criterions[2]
-	else:
-		if args.decoder[0] == 'dmap':
-			criterion_dmap = criterions[1]
-		else:
-			criterion_ori = criterions[1]
-
-	# criterion_vessel = criterions[0]
-	# criterion_dmap = criterions[1]
+	criterion_dmap = criterions[1]
 
 	# epoch_iterator = tqdm(range(1,args.epochs + 1), desc = 'Epoch X | X (Training loss: X) (Validation loss: X) (Validation metric: X)', dynamic_ncols=True)
 	epoch_iterator, loss_type, metric_type = get_epoch_iterator(args)
@@ -233,88 +146,36 @@ def train(model, train_loader, val_loader, optimizer, metric, criterions, lossse
 	for epoch in epoch_iterator:
 		model.train()
 		epoch_loss = 0
-		vessel_loss, dmap_loss, ori_loss = 0,0,0
+		vessel_loss, dmap_loss = 0,0
 		step = 0
 
 		for batch in train_loader:
 			step += 1
+			inputs, vessel_masks, dmap_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device))
+			optimizer.zero_grad()
+			output_vessels, output_dmap = model(inputs)
+			
+			loss_1 = criterion_vessel(output_vessels, vessel_masks)
+			loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
 
-			if len(args.decoder) == 2:
-				inputs, vessel_masks, dmap_masks, ori_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device), batch['ori'].to(device))
-				optimizer.zero_grad()
-				output_vessels, output_dmap, output_ori = model(inputs)
+			loss = loss_1 + args.alpha * loss_2
 
-				loss_1 = criterion_vessel(output_vessels, vessel_masks)
-				loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
-				loss_3 = criterion_ori(output_ori, ori_masks)
-
-				# Plotear con twin axes para ver ratio
-				loss = loss_1 + loss_2 + loss_3
-
-				loss.backward()
-				optimizer.step()
-				epoch_loss += loss.item()
-				vessel_loss += loss_1.item()
-				dmap_loss += loss_2.item()
-				ori_loss += loss_3.item()
-			else:
-				if args.decoder[0] == 'dmap':
-					inputs, vessel_masks, dmap_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['dmap'].to(device))
-
-					optimizer.zero_grad()
-					output_vessels, output_dmap = model(inputs)
-
-					loss_1 = criterion_vessel(output_vessels, vessel_masks)
-					loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
-
-					loss = loss_1 + args.alpha_dmap * loss_2
-
-					loss.backward()
-					optimizer.step()
-					epoch_loss += loss.item()
-					vessel_loss += loss_1.item()
-					dmap_loss += loss_2.item()
-				else:
-					inputs, vessel_masks, ori_masks = (batch['image'].to(device), batch['vessel'].to(device), batch['ori'].to(device))
-					optimizer.zero_grad()
-					output_vessels, output_ori = model(inputs)
-
-					loss_1 = criterion_vessel(output_vessels, vessel_masks)
-					loss_3 = criterion_ori(output_ori, ori_masks)
-
-					# Plotear con twin axes para ver ratio
-					loss = loss_1 + args.alpha_ori * loss_3
-
-					loss.backward()
-					optimizer.step()
-					epoch_loss += loss.item()
-					vessel_loss += loss_1.item()
-					ori_loss += loss_3.item()
+			loss.backward()
+			optimizer.step()
+			epoch_loss += loss.item()
+			vessel_loss += loss_1.item()
+			dmap_loss += loss_2.item()
 
 		epoch_loss /= step
 		vessel_loss /= step
-		if len(args.decoder) == 2:
-			dmap_loss /= step
-			ori_loss /= step
-		else:
-			if args.decoder[0] == 'dmap':
-				dmap_loss /= step
-			else:
-				ori_loss /= step
+		dmap_loss /= step
 
 		lossses_list_tr[0].append(epoch_loss)
 		lossses_list_tr[1].append(vessel_loss)
-		if len(args.decoder) == 2:
-			lossses_list_tr[2].append(dmap_loss)
-			lossses_list_tr[3].append(ori_loss)
-		else:
-			if args.decoder[0] == 'dmap':
-				lossses_list_tr[2].append(dmap_loss)
-			else:
-				lossses_list_tr[2].append(ori_loss)
+		lossses_list_tr[2].append(dmap_loss)
 
 		if (epoch  % eval_num == 0):
-			metrics_val , losses_val = validation(model, val_loader, metric, criterions, post_trans, args)
+			metrics_val , losses_val = validation(model, val_loader, metric, [criterion_vessel, criterion_dmap], post_trans, args)
 			# loss_list.append(epoch_loss)
 			metric_list[0].append(metrics_val[0])
 			metric_list[1].append(metrics_val[1])
@@ -322,17 +183,10 @@ def train(model, train_loader, val_loader, optimizer, metric, criterions, lossse
 			metric_list[3].append(metrics_val[3])
 			lossses_list_val[0].append(losses_val[0])
 			lossses_list_val[1].append(losses_val[1])
-			lossses_list_val[2].append(losses_val[2]) # Either dmap loss or ori loss
-			if len(args.decoder) == 2:
-				lossses_list_val[3].append(losses_val[3])
-			
+			lossses_list_val[2].append(losses_val[2])
 
 
-			epoch_iterator.set_description('Epoch %d | %d (Training loss: %4f) (Validation loss: %4f) (Validation metric: %4f)' % (epoch,
-																														   args.epochs,
-																														   epoch_loss, 
-																														   losses_val[0],
-																														   metrics_val[0]))
+			epoch_iterator.set_description('Epoch %d | %d (Training loss: %4f) (Validation loss: %4f) (Validation metric: %4f)' % (epoch, args.epochs, epoch_loss, losses_val[0], metrics_val[0]))
 			if metrics_val[0] > dice_val_best:
 				best_epoch = epoch
 				dice_val_best = metrics_val[0]
@@ -344,7 +198,6 @@ def train(model, train_loader, val_loader, optimizer, metric, criterions, lossse
 				)
 		
 	return lossses_list_tr, metric_list, lossses_list_val, best_epoch
-
 
 def main(args):
 	
