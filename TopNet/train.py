@@ -387,44 +387,14 @@ def main(args):
 	metric_list.append(surface_list)
 	metric_list.append(cldice_list)
 	mean_folds, std_folds = list(), list()
-	# loss_vessel_tr, loss_dmap_tr,loss_vessel_val, loss_dmap_val = list(), list(), list(), list()
-	loss_vessel_tr = list()
-	list_training = [[],loss_vessel_tr]
+	loss_vessel_tr, loss_dmap_tr,loss_vessel_val, loss_dmap_val = list(), list(), list(), list()
 
-	loss_vessel_val = list()
-	list_validation = [[], loss_vessel_val]
-
-	if len(args.decoder) == 2:
-		loss_dmap_tr = list()
-		loss_ori_tr = list()
-
-		loss_dmap_val = list()
-		loss_ori_val = list()
-		
-		list_training.append(loss_dmap_tr)
-		list_training.append(loss_ori_tr)
-
-		list_validation.append(loss_dmap_val)
-		list_validation.append(loss_ori_val)
-	else:
-		if args.decoder[0] == 'dmap':
-			loss_dmap_tr = list()
-			loss_dmap_val = list()
-
-			list_training.append(loss_dmap_tr)
-			list_validation.append(loss_dmap_val)
-		else:
-			loss_ori_tr = list()
-			loss_ori_val = list()
-
-			list_training.append(loss_ori_tr)
-			list_validation.append(loss_ori_val)
 
 	if not args.binary:
 		mean_portal_folds, std_portal_folds, mean_hepatic_folds, std_hepatic_folds =  list(), list(), list(), list()
 
 	utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights'), remove_folder=False)
-	metrics_all = np.zeros((args.k, 11 if len(args.decoder) == 2 else 10, args.epochs)) # Variable to save all the KFCV metrics
+	metrics_all = np.zeros((args.k, 10, args.epochs)) # Variable to save all the KFCV metrics
 
 	for fold, (json_route, dictionary_) in enumerate( zip(json_routes, dictionary_list) ):
 		print('Creating loaders fold {}...\n'.format(fold+1))
@@ -433,7 +403,7 @@ def main(args):
 		# CREATE MODEL, LOSS, OPTIMIZER
 		os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 		print('Creating model...\n')
-		model, criterions = models.get_model_loss(args)
+		model, loss_function_vessel, loss_function_dmap = models.get_model_loss(args)
 		model.to(device)
 
 		torch.backends.cudnn.benchmark = True
@@ -444,35 +414,14 @@ def main(args):
 			val_loader,
 			optimizer,
 			my_metrics,
-			criterions,
-			list_training,
-			list_validation,
+			[loss_function_vessel, loss_function_dmap],
+			[loss_list_tr,loss_vessel_tr, loss_dmap_tr],
+			[loss_list_ts, loss_vessel_val,loss_dmap_val],
 			metric_list,
 			fold,
 			args)
 
 
-		"""metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
-		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
-		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training (C_loss (D2) or MSELoss (D3))
-		if len(args.decoder) == 2:
-			metrics_all[fold,3,:] = np.asarray(losses_tr[3][-args.epochs:]) # Training L1Loss
-
-		metrics_all[fold,3,:] = np.asarray(losses_val[0][-args.epochs:]) # Validation loss (DiceCELoss + lambda * C_loss)
-		metrics_all[fold,4,:] = np.asarray(losses_val[1][-args.epochs:]) # Validation DiceCELoss
-		metrics_all[fold,5,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation (C_loss (D2) or MSELoss (D3))
-		if len(args.decoder) == 2:
-			metrics_all[fold,6,:] = np.asarray(losses_val[2][-args.epochs:]) # Validation L1Loss
-			metrics_all[fold,7,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
-			metrics_all[fold,8,:] = np.asarray(metric_list[1][-args.epochs:]) # Hausdorff distance metric
-			metrics_all[fold,9,:] = np.asarray(metric_list[2][-args.epochs:]) # Average Surface Distance
-			metrics_all[fold,10,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)
-		else:
-
-			metrics_all[fold,6,:] = np.asarray(metric_list[0][-args.epochs:]) # Dice Metric
-			metrics_all[fold,7,:] = np.asarray(metric_list[1][-args.epochs:]) # Hausdorff distance metric
-			metrics_all[fold,8,:] = np.asarray(metric_list[2][-args.epochs:]) # Average Surface Distance
-			metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)"""
 		metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
 		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
 		metrics_all[fold,2,:] = np.asarray(losses_tr[2][-args.epochs:]) # Training C_loss
@@ -485,8 +434,7 @@ def main(args):
 		metrics_all[fold,9,:] = np.asarray(metric_list[3][-args.epochs:]) # Topology Metric (Cldice)
 
 		# SAVE METRIC / LOSS PLOTS
-		# plots.save_loss_metric(losses_tr[0][-args.epochs:], metric_list[0][-args.epochs:], losses_val[0][-args.epochs:], fold, best_epoch, args) # CASO NORMAL
-		plots.save_loss_metric(losses_tr, metric_list[0][-args.epochs:], losses_val, fold, best_epoch, args) # Comparar pérdidas
+		plots.save_loss_metric(losses_tr[0][-args.epochs:], metric_list[0][-args.epochs:], losses_val[0][-args.epochs:], fold, best_epoch, args)
 
 		# INFERENCE ON TEST SET 
 		metrics = utils.pipeline_2(model,os.path.join(current_path, 'weights', 'fold_'+str(fold)), dictionary_, info_dict, test_loader, fold, args)
@@ -530,7 +478,7 @@ if __name__ == '__main__':
 	parser.add_argument('-dataset', required=False, type=str, default = 'VEELA') # Future: add choices
 	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
 	parser.add_argument('-vessel', required=False, type=str, default='portal', choices=('portal','hepatic'))
-	parser.add_argument('-dataset_path', required = False, type=str, default='/home/guijosa/Documents/PythonDocs/VEELA/dataset')
+	parser.add_argument('-dataset_path', required = False, type=str, default='...')
 	parser.add_argument('-input_size', required=False, nargs='+', type = int, default=[224,224,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
 	parser.add_argument('-epochs', required=False, type=int, help='Number of epochs', default=2)
@@ -538,10 +486,8 @@ if __name__ == '__main__':
 	parser.add_argument('-weight_decay', required=False, type=float, default=1e-5)
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 5)
 
-	# parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
-	parser.add_argument('-decoder', required=False, nargs = '+', type=str, default=['dmap', 'ori'], choices=('dmap', 'ori', ['dmap', 'ori']))
-	parser.add_argument('-alpha_dmap', required=False, type=float, default=10, help='Weighting factor for C_loss.')
-	parser.add_argument('-alpha_ori', required=False, type=float, default=50, help='Weighting factor for C_loss.')
+	parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
+	parser.add_argument('-alpha', required=False, type=float, default=10, help='Weighting factor for C_loss.')
 	parser.add_argument('-metric', required=False, type=str, default='dice', choices=('dice', 'haus', 'surfdist', 'softdice'))
 
 	# UNETR
