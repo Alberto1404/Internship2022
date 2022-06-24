@@ -19,7 +19,7 @@ from monai.metrics import DiceMetric, HausdorffDistanceMetric, SurfaceDistanceMe
 from scipy.io import savemat
 
 # Add topology functions
-# sys.path.insert(0,os.path.join('home2/alberto/aux_TOPNET/code_TopNet', 'clDice')) # Modify topology path
+# sys.path.insert(0,'...') # Modify topology path
 # from clDice.cldice_metric.cldice import clDice as clDice_metric
 from veela import clDice as clDice_metric
 
@@ -55,6 +55,9 @@ def get_epoch_iterator(args):
 		loss = 'DiceCELoss'
 
 	return tqdm(range(1,args.epochs + 1), desc = 'Epoch X | X (Training loss: X) (Validation loss: X) (Validation '+ metric + ': X)', dynamic_ncols=True), loss, metric
+
+
+
 
 def validation(model, val_loader, metric, criterions, post_trans, args):
 
@@ -204,12 +207,6 @@ def validation(model, val_loader, metric, criterions, post_trans, args):
 
 	return [mean_dice_vals, mean_haus_vals, mean_avg_vals, mean_cldice_vals], val_loss
 
-
-"""if args.decoder == 'dmap':
-
-	elif args.decoder == 'ori':
-
-	else:"""
 
 def train(model, train_loader, val_loader, optimizer, metric, criterions, lossses_list_tr, lossses_list_val, metric_list, fold, args):
 	dice_val_best = -1
@@ -368,25 +365,27 @@ def main(args):
 	) # Folder to save resized images that feed the network								
 	
 	print('Splitting dataset... \n')
-	utils.create_dir(reshaped_liver_dir, remove_folder = False)
-	utils.split_dataset(info_dict, reshaped_liver_dir, args)
+	utils.create_dir(reshaped_liver_dir, remove_folder = False) # Create such directory where to pre-process dataset
+	utils.split_dataset(info_dict, reshaped_liver_dir, args) # Preprocess-dataset, ready for training. Do nothing if already pre-processed. 
 
-	# json_routes, dictionary_list = utils.create_json_file(reshaped_liver_dir, info_dict, args)
-	if args.binary:
+	json_routes, dictionary_list = utils.create_json_file(reshaped_liver_dir, info_dict, args)
+	"""if args.binary:
 		json_routes = [os.path.join('/home2/alberto/aux_TOPNET/code_TopNet/clDice','binary',('dmap' if (len(args.decoder) == 1 and args.decoder[0] == 'dmap') else 'ori' if (len(args.decoder) == 1 and args.decoder[0] == 'ori') else '3dec'),args.vessel,'VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
 	else:
 		json_routes = [os.path.join('/home2/alberto/aux_TOPNET/code_TopNet/clDice','multi','VEELA_'+str(i)+'.json') for i in range(args.k)] # KFCV given splits
-	dictionary_list = [utils.json2dict(json_routes[i]) for i in range(args.k)] # KFCV given splits
+	dictionary_list = [utils.json2dict(json_routes[i]) for i in range(args.k)] # KFCV given splits"""
 
 	my_metrics = [DiceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
 				  HausdorffDistanceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False), 
 				  SurfaceDistanceMetric(include_background=True if args.binary else False, reduction="mean", get_not_nans=False)]
+	
 	loss_list_tr, loss_list_ts, dice_list, haus_list, surface_list, cldice_list = list(), list(), list(), list(), list(), list()
 	metric_list = list()
 	metric_list.append(dice_list)
 	metric_list.append(haus_list)
 	metric_list.append(surface_list)
 	metric_list.append(cldice_list)
+	
 	mean_folds, std_folds = list(), list()
 	# loss_vessel_tr, loss_dmap_tr,loss_vessel_val, loss_dmap_val = list(), list(), list(), list()
 	loss_vessel_tr = list()
@@ -426,12 +425,13 @@ def main(args):
 
 	utils.create_dir(os.path.join(os.path.abspath(os.getcwd()), 'weights'), remove_folder=False)
 	metrics_all = np.zeros((args.k, 11 if len(args.decoder) == 2 else 10, args.epochs)) # Variable to save all the KFCV metrics
-
+	
+	
 	for fold, (json_route, dictionary_) in enumerate( zip(json_routes, dictionary_list) ):
 		print('Creating loaders fold {}...\n'.format(fold+1))
 		train_loader, val_loader, test_loader = dataset_loader.get_loaders(args, json_route)
 
-		# CREATE MODEL, LOSS, OPTIMIZER
+		# TYPICAL PYTORCH TRAINING PROCESS
 		os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 		print('Creating model...\n')
 		model, criterions = models.get_model_loss(args)
@@ -439,6 +439,7 @@ def main(args):
 
 		torch.backends.cudnn.benchmark = True
 		optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+		
 		losses_tr, metric_list, losses_val, best_epoch = train(
 			model,
 			train_loader,
@@ -451,7 +452,8 @@ def main(args):
 			metric_list,
 			fold,
 			args)
-
+		
+		# SAVE METRICS
 
 		metrics_all[fold,0,:] = np.asarray(losses_tr[0][-args.epochs:]) # Training loss (DiceCELoss + lambda * C_loss)
 		metrics_all[fold,1,:] = np.asarray(losses_tr[1][-args.epochs:]) # Training DiceCELoss
@@ -479,7 +481,7 @@ def main(args):
 		plots.save_loss_metric(losses_tr[0][-args.epochs:], metric_list[0][-args.epochs:], losses_val[0][-args.epochs:], fold, best_epoch, args) # CASO NORMAL
 		# plots.save_loss_metric(losses_tr, metric_list[0][-args.epochs:], losses_val, fold, best_epoch, args) # Comparar pérdidas
 
-		# INFERENCE ON TEST SET 
+		# INFERENCE ON TEST SET AND RESULT SAVING
 		metrics = utils.pipeline_2(model,os.path.join(current_path, 'weights', 'fold_'+str(fold)), dictionary_, info_dict, test_loader, fold, args)
 		mean_folds.append(metrics[0])
 		std_folds.append(metrics[1])
@@ -488,7 +490,8 @@ def main(args):
 			std_portal_folds.append(metrics[3])
 			mean_hepatic_folds.append(metrics[4])
 			std_hepatic_folds.append(metrics[5])
-
+	
+	# CREATE TXT FILE WITH METRICS
 	with open('./metrics.txt', 'w') as f:
 		if args.binary:
 			f.write('Successfully performed K-fold Cross Validation with K = {}.\nBest prediction obtained in fold = {}\nKFCV-Mean dice: {}\nKFCV-Std dice: {}\n'.format(
@@ -515,13 +518,13 @@ def main(args):
 
 if __name__ == '__main__':
 
-	
+	# PARSER WITH ALL ARGUMENTS
 	parser = argparse.ArgumentParser(description='VEELA dataset segmentation with transformers')
 
 	parser.add_argument('-dataset', required=False, type=str, default = 'VEELA') # Future: add choices
-	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'))
+	parser.add_argument('-binary', required=False, type=str, default='True', choices=('True','False'),help = 'binary (True) or multi-class (False)')
 	parser.add_argument('-vessel', required=False, type=str, default='portal', choices=('portal','hepatic'))
-	parser.add_argument('-dataset_path', required = False, type=str, default='/home2/alberto/data/VEELA/dataset')
+	parser.add_argument('-dataset_path', required = False, type=str, default='...', help = 'Define dataset path accordingly')
 	parser.add_argument('-input_size', required=False, nargs='+', type = int, default=[224,224,128],help='Size of volume that feeds the network. Ex: --input_size 16 16 16')
 	parser.add_argument('-batch', required=False, type=int, help='Batch size', default=1)
 	parser.add_argument('-epochs', required=False, type=int, help='Number of epochs', default=2)
