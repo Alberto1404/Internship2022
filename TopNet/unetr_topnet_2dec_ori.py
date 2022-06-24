@@ -260,6 +260,6 @@ if __name__ == '__main__':
 	inputs = torch.rand(1,1,224,224,128)
 	pred1, pred2 = model(inputs)
 
-	print('FUNCIONA!!!!')
+	print('WORKING!!!!')
 
 	
