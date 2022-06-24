@@ -211,7 +211,8 @@ def validation(model, val_loader, metric, criterions, post_trans, args):
 def train(model, train_loader, val_loader, optimizer, metric, criterions, lossses_list_tr, lossses_list_val, metric_list, fold, args):
 	dice_val_best = -1
 	best_epoch = -1
-
+	 
+	# SELECT CRITERIONS
 	criterion_vessel = criterions[0]
 	if len(args.decoder) == 2:
 		criterion_dmap = criterions[1]
@@ -246,7 +247,7 @@ def train(model, train_loader, val_loader, optimizer, metric, criterions, lossse
 				loss_2 = criterion_dmap(output_dmap, dmap_masks, vessel_masks)
 				loss_3 = criterion_ori(output_ori, ori_masks)
 
-				# Plotear con twin axes para ver ratio
+				# NOT TESTED YET
 				loss = loss_1 + loss_2 + loss_3
 
 				loss.backward()
