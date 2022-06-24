@@ -533,12 +533,12 @@ if __name__ == '__main__':
 	parser.add_argument('-k', required=False, type=int, help='Number of folds for K-fold Cross Validation', default = 5)
 
 	# parser.add_argument('-net', required=False, type=str, default='unetr', choices=('unet', 'unetr'))
-	parser.add_argument('-decoder', required=False, nargs = '+', type=str, default='ori', choices=('dmap', 'ori', ['dmap', 'ori']))
+	parser.add_argument('-decoder', required=False, nargs = '+', type=str, default='ori', choices=('dmap', 'ori', ['dmap', 'ori']), help = '(D1+D2), (D1+D3), (D1+D2+D3) architectures, respectively')
 	parser.add_argument('-alpha_dmap', required=False, type=float, default=10, help='Weighting factor for C_loss.')
-	parser.add_argument('-alpha_ori', required=False, type=float, default=50, help='Weighting factor for C_loss.')
+	parser.add_argument('-alpha_ori', required=False, type=float, default=50, help='Weighting factor for MSE.')
 	parser.add_argument('-metric', required=False, type=str, default='dice', choices=('dice', 'haus', 'surfdist', 'softdice'))
 
-	# UNETR
+	# UNETR ARGUMENTS (DO NOT TOUCH DEFAULT VALUES)
 	parser.add_argument('-feature_size', required=False, type=int, default=16)
 	parser.add_argument('-hidden_size', required=False, type=int, default = 768)
 	parser.add_argument('-mlp_dim', required=False, type=int, default = 3072)
