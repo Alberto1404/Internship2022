@@ -17,7 +17,7 @@ import torch
 from torch.nn import SmoothL1Loss, MSELoss, ReLU, Module
 
 # Add topology functions
-# sys.path.insert(0,os.path.join('/home2/alberto/aux_TOPNET/code_TopNet', 'clDice')) # Modify topology path
+# sys.path.insert(0,'...') # Modify topology path
 # from clDice.cldice_loss.cldice import soft_dice, soft_dice_cldice
 
 class C_loss (Module): # D2
