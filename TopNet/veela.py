@@ -13,10 +13,12 @@ from skimage.morphology import skeletonize_3d, binary_dilation
 from skimage.util import img_as_float32
 from scipy.ndimage.morphology import distance_transform_edt as DTM
 from monai.transforms import LabelToContour, KeepLargestConnectedComponent
-# import dijkstra3d, collections
+import dijkstra3d
 
 from tqdm import tqdm
 
+# CenterLine Dice scores from 
+# https://github.com/jocpae/clDice
 
 def cl_score(v, s):
 	"""[this function computes the skeleton volume overlap]
@@ -45,18 +47,20 @@ def clDice(v_p, v_l):
 
 
 def compute_distance_map(volume):
+	# Computation of Centerness score map GT for D2
+	
 	# Ensure binary behaviour for skeletonization
 	volume[volume != 0] = 1 
 	skel = img_as_float32(skeletonize_3d(volume))
-	# skel = img_as_float32(skeletonize_3d(binary_dilation(binary_dilation(skel).astype(np.float32)).astype(np.float32)))   
 
-	# return np.multiply( (DTM(1-skel) + 1), volume)
 	distances, indices = DTM(1 - skel, return_indices=True)
 	
 	return np.multiply(distances, volume), indices, skel
 
 
 def binarize(volume, value = 1):
+	# Ensure masks are binarized after being resized. 
+	
 	volume[volume > 0.95] = value
 	volume[volume != value] = 0
 
@@ -91,6 +95,8 @@ def extract_liver(volume_image, info_dict, image_idx):
 	return liver
 
 def get_liver_bounding_box(liver):
+	
+	# Get liver coordinates, as we will work only with this as whole image to reduce data-imbalance
 
 	X, Y, Z = np.where(liver > 0)
 	return np.array([np.min(X), np.max(X), np.min(Y), np.max(Y), np.min(Z), np.max(Z)])
@@ -150,6 +156,8 @@ def load_dataset(dict_names, dataset_path):
 	return dict_names
 
 def cluster_tree(volume, skel, indices):
+	
+	# Compute labelled tree mask
 
 	x,y,z = np.where(volume == 1)
 	skeleton = skan.Skeleton(skel)
@@ -163,6 +171,9 @@ def cluster_tree(volume, skel, indices):
 
 
 def get_tree_radius(labelled_tree, distances):
+	
+	# Radii estimation, as dot product of centerness score and contour of label (assumption of vasculature as tubular structures)
+	
 	radius_label = np.zeros((len(np.unique(labelled_tree)) - 1, 2)) # -1 to exclude background
 	radius_label[:,0] = np.unique(labelled_tree) [1:]
 	labelled_tree_t = torch.from_numpy(labelled_tree)
@@ -187,10 +198,13 @@ def create_binary_tree_given_label(labelled_tree, label, binary_tree):
 	return binary_tree
 
 def kmeans_tree(radius, labelled_tree):
+	
+	# Segment a tree knowing radius, for segmantic segmentation in low-mid-hgih radii vessels (FUTURE WORK)
+	
 	# for radius in radii:
 	low_radio, mid_radio, high_radio = np.zeros_like(labelled_tree), np.zeros_like(labelled_tree), np.zeros_like(labelled_tree)
 
-	km = KMeans(n_clusters=3)
+	km = KMeans(n_clusters=3) # Modify as desired
 	kmeans = km.fit_predict(radius[:,1].reshape(-1,1))
 
 	idx_lows = radius[:,0] [kmeans == 0]
@@ -209,6 +223,8 @@ def kmeans_tree(radius, labelled_tree):
 	return low_radio, mid_radio, high_radio
 
 def histogram_PDE_radius(radius_trees):
+	
+	# Fancy representation of radii PDE
 
 	dist = pd.DataFrame(radius_trees, colums = ['portal', 'hepatic'])
 	dist.agg(['min', 'max', 'mean', 'std']).round(decimals=2)
@@ -225,6 +241,8 @@ def histogram_PDE_radius(radius_trees):
 # using Bresenham's Algorithm
 
 def bresenham3D(A,B):
+	# Bresenham algorithm in 3D. Ideally used to enlarge skeleton for 
+	
 	x1, y1, z1 = A
 	x2, y2, z2 = B
 	ListOfPoints = []
@@ -343,8 +361,9 @@ def ensure_is_root(skel, binary_tree, labelled_tree, edges_init, root_idx, root)
 
 
 def compute_orientation_skel(skel, binary_tree, labelled_tree):
+	# Computation of orientation vector field GT in D3 (skeleton)
 
-	### 1. Fastest (Orientations collapse in bifurcations)
+	### 1. Fastest (Orientations collapse in bifurcations, adjacent orientations)
 	# skeleton = skan.Skeleton(skel)
 	# orientations = np.zeros((3, np.shape(skel)[0], np.shape(skel)[1], np.shape(skel)[2]))
 
@@ -403,11 +422,11 @@ def compute_orientation_skel(skel, binary_tree, labelled_tree):
 
 	return orientations"""
 
-	# 3. Final Method without root
+	# 3. Final Method without ensuring root
 	skeleton = skan.Skeleton(skel)
 	orientations = np.zeros((3, np.shape(skel)[0], np.shape(skel)[1], np.shape(skel)[2]))
 	
-	## 3.1 Orientation given by abs difference among adjacent voxels (more complex)
+	## 3.1 Orientation given by abs difference among adjacent voxels (more complex task)
 	"""for label in range(skeleton.n_paths):
 		coords_branch_i = skeleton.path_coordinates(index = label) # (N,3)
 		for coord_idx, coord in enumerate(coords_branch_i [:-1]):
@@ -431,11 +450,12 @@ def compute_orientation_skel(skel, binary_tree, labelled_tree):
 
 def compute_orientation_tree(volume, indices, labelled_tree, skel):
 	x,y,z = np.where(volume == 1)
-
+	
 	orientation_tree = np.zeros_like(indices)
 	# orientation_skel = compute_orientation_skel(skel)
 	orientation_skel = compute_orientation_skel(skel, volume, labelled_tree)
-
+	
+	# Apply global orientation to whole brach
 	for h,w,d in zip(x,y,z):
 		orientation_tree[:,h,w,d] = orientation_skel[:, indices[:,h,w,d][0], indices[:,h,w,d][1], indices[:,h,w,d][2]]
 
