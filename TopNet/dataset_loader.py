@@ -125,4 +125,3 @@ def get_loaders(args, json_routes):
 		test_ds, batch_size=args.batch, shuffle = False, num_workers=4, pin_memory=True
 	)
 	return train_loader, val_loader, test_loader
-
