@@ -527,3 +527,69 @@ def pipeline_1(info_dict, dst_folder, args):
 			# SAVE RESIZED DISTANCE MAPS
 			output_ima = nib.Nifti1Image(resized_multilabel, info_dict['Affine matrix'][idx], info_dict['Header'][idx])
 			nib.save(output_ima, dst_folder + '/' + info_dict['Image name'][idx].split('.')[0] + '-liver_multi_ori.nii.gz')
+
+
+
+
+
+
+
+if __name__ == '__main__':
+
+	dataset_path = '/home/guijosa/Documents/PythonDocs/VEELA/dataset'
+	# dataset_path = '/home/guijosa/Documents/PythonDocs/TopNet/data_reshaped_224x224x128_binary'
+	radius_p, radius_h = list(), list()
+
+	bar_ = tqdm(sorted(os.listdir(dataset_path)))
+	"""for name in bar_:
+		bar_.set_description('Processing {}'.format(name))
+		if 'por' in name:
+			# Portal
+			ima_nifti = nib.load(os.path.join(dataset_path, name))
+			ima = ima_nifti.get_fdata()
+			skel = img_as_float32(skeletonize_3d(ima)).astype(np.uint8)
+			distances, indices = DTM(1 - skel, return_indices=True)
+			
+			if not os.path.isfile(os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-por-labelled.nii.gz')):
+				clustered_tree = cluster_tree(ima, skel, indices)
+				output_ima = nib.Nifti1Image(clustered_tree, ima_nifti.affine, ima_nifti.header)
+				nib.save(output_ima, os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-por-labelled.nii.gz'))
+			else:
+				clustered_tree = nib.load(os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-por-labelled.nii.gz')).get_fdata()
+
+			radius = get_tree_radius(clustered_tree, distances)
+			low, mid, high = kmeans_tree(radius, clustered_tree)
+			output_ima = nib.Nifti1Image(binarize(low) + binarize(mid, 2) + binarize(high,3), ima_nifti.affine, ima_nifti.header)
+			nib.save(output_ima, os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/3_clusters', name.split('-')[0] + '-VE-por-segmented.nii.gz'))
+			radius_p.append(radius)
+
+		elif 'hep' in name:
+			# Labelled hepatic
+			ima_nifti = nib.load(os.path.join(dataset_path, name))
+			ima = ima_nifti.get_fdata()
+			skel = img_as_float32(skeletonize_3d(ima)).astype(np.uint8)
+			distances, indices = DTM(1 - skel, return_indices=True)
+
+			if not os.path.isfile(os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-hep-labelled.nii.gz')):
+				clustered_tree = cluster_tree(ima, skel, indices)
+				output_ima = nib.Nifti1Image(clustered_tree, ima_nifti.affine, ima_nifti.header)
+				nib.save(output_ima, os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-hep-labelled.nii.gz'))
+			else:
+				clustered_tree = nib.load(os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled', name.split('-')[0] + '-VE-hep-labelled.nii.gz')).get_fdata()
+
+			radius = get_tree_radius(clustered_tree, distances)
+			low, mid, high = kmeans_tree(radius, clustered_tree)
+			output_ima = nib.Nifti1Image(binarize(low) + binarize(mid, 2) + binarize(high,3), ima_nifti.affine, ima_nifti.header)
+			nib.save(output_ima, os.path.join('/home/guijosa/Documents/PythonDocs/VEELA/3_clusters', name.split('-')[0] + '-VE-hep-segmented.nii.gz'))
+			radius_h.append(radius)"""
+
+	y_true_nifti = nib.load('/home/guijosa/Documents/PythonDocs/VEELA/dataset/001-VE-por.nii.gz')
+	y_true  = y_true_nifti.get_fdata()
+
+	skel = img_as_float32(skeletonize_3d(y_true)).astype(np.uint8)
+	dmap, indices = DTM(1-skel, return_indices=True)
+
+	clustered_tree = nib.load('/home/guijosa/Documents/PythonDocs/VEELA/dataset_labelled/001-VE-por-labelled.nii.gz')
+	orientation_tree = compute_orientation_tree(y_true, indices)
+
+	print('DONE')
