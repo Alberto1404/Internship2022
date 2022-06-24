@@ -1,0 +1,162 @@
+{
+    "description": "btcv yucheng",
+    "licence": "yt",
+    "modality": {
+        "0": "CT"
+    },
+    "name": "VEELA",
+    "numTest": 20,
+    "numTraining": 80,
+    "reference": "Vanderbilt University",
+    "tensorImageSize": "3D",
+    "test": [
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/001-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/001-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/009-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/009-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/010-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/010-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/016-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/016-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/018-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/018-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/033-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/033-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/040-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/040-VE-liver_por_GT.nii.gz"
+        }
+    ],
+    "training": [
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/003-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/003-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/004-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/004-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/005-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/005-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/007-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/007-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/008-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/008-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/011-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/011-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/012-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/012-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/013-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/013-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/014-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/014-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/015-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/015-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/020-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/020-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/022-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/022-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/023-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/023-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/025-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/025-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/027-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/027-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/028-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/028-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/030-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/030-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/031-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/031-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/032-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/032-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/034-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/034-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/036-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/036-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/037-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/037-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/039-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/039-VE-liver_por_GT.nii.gz"
+        }
+    ],
+    "validation": [
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/002-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/002-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/006-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/006-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/017-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/017-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/019-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/019-VE-liver_por_GT.nii.gz"
+        },
+        {
+            "image": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/035-VE-liver.nii.gz",
+            "label": "/home/guijosa/Documents/PythonDocs/UNETR/data_reshaped_224x224x128_binary/035-VE-liver_por_GT.nii.gz"
+        }
+    ],
+    "labels": {
+        "0": "background",
+        "1": "portal_vessels"
+    }
+}
