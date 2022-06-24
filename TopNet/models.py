@@ -1,3 +1,10 @@
+### In models.py appear definitions of: 
+# - C_loss and L2_loss (loss functions for D2 and D3 decoders respectively)
+# - Selection of the architecture to use for training: 
+# 	· UNETR_topnet_2: (D1+D2)
+# 	· UNETR_topnet_2_ori: (D1+D3)
+# 	· UNETR_topnet_3: (D1+D2+D3) (NOT USED)
+
 from unetr_topnet_2dec import UNETR_topnet_2
 from unetr_topnet_2dec_ori import UNETR_topnet_2_ori
 from unetr_topnet_3dec import UNETR_topnet_3
@@ -42,18 +49,6 @@ class L2_loss(Module):
 		y_pred = self.relu(y_pred)
 		L2 = self.mse(y_pred, y_true)
 		return L2
-
-
-"""class Weighted_L2Loss (Module): # D3
-
-	def __init__(self, weight = 1):
-		super(Weighted_L2Loss, self).__init__()
-		self.weight = weight
-		self.L2Loss = MSELoss()
-
-	def forward(self, y_pred, y_true):
-		return self.weight * 
-"""
 
 def get_model_loss(args):
 
