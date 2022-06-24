@@ -21,7 +21,7 @@ from monai.data import decollate_batch
 from monai.transforms import AsDiscrete,  Activations, EnsureType, Compose
 
 # Add topology functions
-# sys.path.insert(0,os.path.join('home2/alberto/aux_TOPNET/code_TopNet', 'clDice')) # Modify topology path
+# sys.path.insert(0,'...') # Modify topology path
 # from clDice.cldice_metric.cldice import clDice as clDice_metric
 from veela import clDice as clDice_metric
 
@@ -54,7 +54,7 @@ def create_dir(path, remove_folder):
 		os.rmdir(path)
 		create_dir(path, False)
 
-def get_index_dict(my_dict):
+def get_index_dict(my_dict): # Get index ID from CT & masks names
 
 	all_list = list()
 	for element in my_dict['Image name']:
@@ -65,41 +65,19 @@ def get_index_dict(my_dict):
 def kfcv(dataset, k):
 	print('Performing K-Fold Cross-Validation... ')
 	data_backup = dataset.copy() # Dataset is the list with all the idxs
-
-	folds_training = np.zeros((23,k))
-	folds_validation = np.zeros((5,k))
-	# folds_test = np.zeros((7,k))
-	folds_test = np.reshape(sorted(random.sample(dataset,7)) * k, (5,7)).T # Expected shape: (7,5)
-
-	for fold in range(k):
-		validation = sorted(random.sample(dataset,5))
-		while any(item in folds_test[:,fold] for item in validation):
-			validation = sorted(random.sample(dataset,5))
-		training = sorted(list(set(dataset) - set(folds_test[:,fold]) - set(validation)))
-
-		folds_training[:,fold] = training
-		folds_validation[:,fold] = validation
-
-	"""print('Performing K-Fold Cross-Vailidation... ')
-	data_backup = dataset.copy() # Dataset is the list with all the idxs
-
+	
+	# Fixed size of training-validation-test for VEELA dataset!!
 	folds_training = np.zeros((23,k))
 	folds_validation = np.zeros((5,k))
 	folds_test = np.zeros((7,k))
 	
-	for fold in range(k):
-		training = sorted(random.sample(dataset,23))
-		print('\nTraining indexed obtained, obtaining validation... ')
-		validation = sorted(random.sample(dataset,5))
-		while any(item in training for item in validation):
-			validation = sorted(random.sample(dataset,5))
-		print('\nValidation indexes obtained!!!')
-		test = sorted(list(set(dataset) - set(training) - set(validation)))
+	# Ensure randomness in KFCV
+	np.random.shuffle(dataset)
 
-		folds_training[:,fold] = training
-		folds_validation[:,fold] = validation
-		folds_test[:,fold] = test"""
-
+	for fold in range(k): # Rotation of 7 per fold -> K = 5. Modify as desired. 
+		folds_training[:,fold] = np.roll(dataset,-k*fold)[:23]
+		folds_validation[:,fold] = np.roll(dataset,-k*fold)[23:28]
+		folds_test[:,fold] = np.roll(dataset,-k*fold)[-7:]
 	return folds_training.astype(int), folds_validation.astype(int), folds_test.astype(int)
 
 def json2dict(directory):
@@ -109,7 +87,6 @@ def json2dict(directory):
 
 def dict2json(info_dict, dataset_name, save_dir):
 
-	# save_dir = 'home2/alberto/data' # '...'
 	# Serializing json 
 	json_object = json.dumps(info_dict, indent = 4)
 
@@ -118,7 +95,7 @@ def dict2json(info_dict, dataset_name, save_dir):
 		outfile.write(json_object)
 
 
-def create_json_file(dst_folder, info_dict, args): # Add segmentation flag for future
+def create_json_file(dst_folder, info_dict, args): # THIS JSON FILE WILL BE READ BY MONAI VIA "LOADCACHEDATASET" IN ORDER TO CREATE THE TRAIN-VAL-TEST LOADERS
 
 	indexes_list = get_index_dict(info_dict)
 	
@@ -378,7 +355,7 @@ def get_list_of_pos(json_dict, info_dict, key):
 
 	return idxlist
 
-def decollate_batch_list(prob ,test_labels):
+def decollate_batch_list(prob ,test_labels): # USED ONLY FOR MULTICLASS, NOT NECESSARY FOR D1+D2 / D1+D3
 
 	test_labels_list = decollate_batch(test_labels)
 	test_labels = [
@@ -440,7 +417,9 @@ def save_predictions(prediction, idxlist, output_route, info_dict, k, args):
 			nib.save(output, output_route + '/fold_'+str(k) + '/' + info_dict['Image name'][pos] + '_por_segmented.nii.gz')
 		idxlist.pop(0)
 
-def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
+def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args): 
+	# FROM OUTPUT OF THE NETWORK, TO FINAL NIFTI VOLUMES FOR VISUALIZATION
+	
 	output_route = os.path.join(os.path.abspath(os.getcwd()), 'results')
 	create_dir(output_route, remove_folder=False)
 	create_dir(output_route + '/fold_'+str(k), remove_folder=True)
@@ -462,7 +441,7 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
 
 			if args.binary:
 				prediction = [post_trans(i) for i in decollate_batch(test_output_vessels_)]
-				# prediction = [post_trans(i) for i in decollate_batch(prob)] # List of B (batch_size) elements, each is a tensor of (channels, H,W,D)
+
 				dice = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'dice')
 				haus = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'haus')
 				avg = compute_metric_binary(torch.stack(prediction), test_vessel_masks, 'surfdist')
@@ -473,6 +452,7 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
 					
 
 			else:
+				# NOT TESTED... 
 				
 				# Both portal and hepatic (include backgroun False)
 				# prediction_b, test_labels_b = decollate_batch_list(prob[:,1:,:,:,:], test_labels)
@@ -481,27 +461,6 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
 				prediction_p, test_labels_p = decollate_batch_list(test_output_vessels_[:,1,:,:,:].unsqueeze(dim=1), test_vessel_masks)
 				# Hepatic only
 				prediction_h, test_labels_h = decollate_batch_list(test_output_vessels_[:,2,:,:,:].unsqueeze(dim=1), test_vessel_masks)
-
-				"""if args.metric == 'softdice':
-					for output, label in zip(prediction, test_labels_):
-						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						cld_metric.append(clD)
-					metric_test = np.mean(cld_metric)
-
-					for output, label in zip(prediction_p, test_labels_p):
-						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						cld_metric_p.append(clD)
-					metric_test_p = np.mean(cld_metric_p)
-
-					for output, label in zip(prediction_h, test_labels_h):
-						clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
-						cld_metric_h.append(clD)
-					metric_test_h = np.mean(cld_metric_h)"""
-
-
 
 				metrics_multi[0](y_pred=prediction, y=test_labels_)
 				dice = metrics_multi[0].aggregate().item()
@@ -522,7 +481,6 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
 				avg_test_p = compute_metric_binary(torch.stack(prediction)[:,1,:,:,:], torch.stack(test_labels_)[:,1,:,:,:], 'surfdist')
 				avg_test_h = compute_metric_binary(torch.stack(prediction)[:,2,:,:,:], torch.stack(test_labels_)[:,2,:,:,:], 'surfdist')
 
-				# COMPROBAR QUÉ PASAR PARA OBTENER CLDICE METRIC BINARIA EN MULTICLASE
 				for output, label in zip(torch.stack(prediction)[:,1,:,:,:], torch.stack(label)[:,1,:,:,:]):
 					clD = clDice_metric(output.squeeze().argmax(dim=0).cpu().numpy().astype(bool), label.squeeze().argmax(dim =0).cpu().numpy().astype(bool))
 					# clD = clDice_metric(val_output_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool), val_labels_convert[0].squeeze().argmax(dim =0).cpu().numpy().astype(bool))
@@ -558,6 +516,7 @@ def pipeline_2(model,weights_dir, json_dict, info_dict, test_loader, k, args):
 
 			# SAVE SEGMENTATIONS
 			save_predictions(prediction, idxlist, output_route, info_dict, k, args)
+	# SAVE METRICS
 
 	if args.binary:
 		dice_mean = np.mean(dices_test) # total_mean = np.mean(metrics_l[0])
