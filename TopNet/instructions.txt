@@ -1,0 +1,9 @@
+# Para crear un singularity docker (.SIF) ejecutamos la siguiente línea. Le podemos cambiar el nombre si queremos una vez creado.
+singularity pull docker://ubuntu
+# Una vez generado, deberemos instalar todas las librerías que vayamos a necesitar en el contenedor. 
+# Para ello debemos tener permisos de escritura (SANDBOX). Una vez hecho, instalaremos las librerías, y reconvertiremos a .SIF.
+sudo singularity build --sandbox SANDBOX  SIF_FILE (SIF--> SANDBOX)
+sudo singularity shell --writable SANDBOX/ (Open and write in SANDBOX (ex. install packages) )
+sudo singularity build SIF_FILE SANDBOX (SANDBOX-->SIF)
+
+
